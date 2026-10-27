@@ -1,0 +1,21 @@
+# 登录用例数据
+# 字段说明：
+#   case       用例显示名（会出现在 pytest 输出里）
+#   body       请求体
+#   expect_status  期望的状态码
+#   expect_token   是否期望返回 token
+#   expect_message 期望的错误信息（失败场景才写）
+
+- case: 正确账号登录成功
+  body:
+    email: john@mail.com
+    password: changeme
+  expect_status: 201
+  expect_token: true
+
+- case: 密码错误登录失败
+  body:
+    email: john@mail.com
+    password: wrong_password
+  expect_status: 401
+  expect_message: Unauthorized

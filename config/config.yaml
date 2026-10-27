@@ -1,0 +1,12 @@
+# 接口自动化项目配置
+# 改环境只需要改这里，代码里不写死地址
+
+base_url: https://api.escuelajs.co/api/v1
+
+# 请求超时（秒）。接口自动化必须设超时 —— 否则接口挂了你的用例会永远卡住
+timeout: 15
+
+# 登录账号（公开练习站，账号密码是官方示例账号）
+user:
+  email: john@mail.com
+  password: changeme

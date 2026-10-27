@@ -1,0 +1,16 @@
+# 商品查询用例数据
+# 这个站有个坑：limit 参数必须和 offset 一起传才生效
+# （只传 limit=1 会返回全部 143 条）—— 用例里专门留了一条来验证这个行为
+
+- case: 分页查询第一页1条
+  params:
+    limit: 1
+    offset: 0
+  expect_status: 200
+  expect_count: 1
+
+- case: 按标题关键字查询
+  params:
+    title: Shoes
+  expect_status: 200
+  expect_contain: Shoes
