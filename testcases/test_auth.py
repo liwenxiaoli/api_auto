@@ -49,3 +49,5 @@ class TestAuth:
         resp = client.get("/auth/profile")
 
         assert resp.status_code == 401, f"没登录却访问成功了，权限校验有问题: {resp.text}"
+
+

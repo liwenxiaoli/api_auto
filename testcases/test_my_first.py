@@ -32,3 +32,9 @@ def test_价格区间过滤(client):
     assert prices, "查到 0 条，断言没意义"
     for price in prices:
         assert 100 <= price <= 1000, f"超出区间的价格: {price}"
+
+def test_假token访问会被拒绝(client):
+    client.set_header("Authorization", "Bearer token")
+    resp = client.get("/auth/profile")
+    assert resp.status_code == 401
+    client.remove_header("Authorization")

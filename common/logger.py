@@ -4,7 +4,6 @@
 接口不像浏览器能截图，一旦失败，你唯一的线索就是日志里的请求和响应。
 """
 import logging
-import sys
 from pathlib import Path
 
 LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
@@ -17,12 +16,11 @@ logger.setLevel(logging.INFO)
 if not logger.handlers:
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
 
-    # 输出到控制台
-    console = logging.StreamHandler(sys.stdout)
-    console.setFormatter(fmt)
-    logger.addHandler(console)
-
-    # 输出到文件
+    # 输出到文件（失败后回看，接口自动化唯一的"案发现场"）
     file = logging.FileHandler(LOG_DIR / "api.log", encoding="utf-8")
     file.setFormatter(fmt)
     logger.addHandler(file)
+
+    # 注意：这里故意不加控制台 handler。
+    # pytest.ini 里开了 log_cli=true，pytest 会自己把日志按用例分组打印出来。
+    # 如果这里再加一个控制台 handler，同一条日志就会出现两遍（你刚才看到的就是）。
