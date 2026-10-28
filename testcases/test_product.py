@@ -45,10 +45,20 @@ class TestProductQuery:
 
     @allure.story("查询商品详情")
     def test_detail(self, client):
-        resp = client.get("/products/1")
+        """详情用例不写死 id —— 公共测试站的数据随时可能被别人删掉。
+
+        正确做法：先从列表里取一个真实存在的 id，再拿它去查详情。
+        这也是第 6 周 extract 想法的雏形：用前一条响应的值，驱动下一条请求。
+        """
+        list_resp = client.get("/products", params={"limit": 1})
+        assert list_resp.status_code == 200, f"列表查询失败: {list_resp.text}"
+        first_id = json_get(list_resp.json(), "$[0].id")
+        assert first_id, "列表返回为空，没法测详情"
+
+        resp = client.get(f"/products/{first_id}")
 
         assert resp.status_code == 200, f"实际响应: {resp.text}"
-        assert json_get(resp.json(), "id") == 1
+        assert json_get(resp.json(), "id") == first_id
         # 用 jsonpath 取嵌套字段：分类名在 data["category"]["name"]
         assert json_get(resp.json(), "category.name"), "分类信息不应为空"
 

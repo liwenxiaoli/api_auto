@@ -31,26 +31,50 @@ api_auto/
 │  ├─ config.yaml      # base_url、超时、账号 —— 改环境只动这里
 │  └─ settings.py      # 把 yaml 读成常量供代码使用
 ├─ common/
-│  ├─ client.py        # HttpClient：requests.Session 封装（拼地址、超时、日志）
+│  ├─ client.py        # HttpClient：requests.Session 封装（拼地址、超时、日志、渲染占位符）
+│  ├─ context.py       # 变量池：存/取变量，把 ${token} 换成真实值
+│  ├─ extractor.py     # extract：按 jsonpath 规则把响应里的值存进变量池
+│  ├─ runner.py        # 通用用例执行器：一份 yaml 数据 → 一次完整调用
 │  ├─ yaml_util.py     # 读 data/ 下的用例数据
 │  ├─ json_util.py     # jsonpath 取值工具
-│  └─ logger.py        # 日志（控制台 + logs/api.log）
+│  └─ logger.py        # 日志（logs/api.log）
 ├─ data/               # 用例数据（yaml）
 ├─ testcases/          # 用例
-├─ conftest.py         # fixture：client / token / auth_client
+├─ docs/               # 学习指南、练习说明
+├─ conftest.py         # fixture：ctx / client / token / auth_client
 ├─ pytest.ini
 └─ requirements.txt
 ```
 
-## 三个 fixture 的区别（conftest.py）
+## 四个 fixture 的区别（conftest.py）
 
 | fixture | 作用域 | 用途 |
 |---|---|---|
+| `ctx` | session | 变量池，配合 extract 与 `${}` 占位符使用 |
 | `client` | session | 未登录的客户端，查公开接口用 |
 | `token` | session | 只登录一次，所有用例共用 |
 | `auth_client` | function | 带 `Authorization` 头的客户端，测需要登录的接口 |
 
 用例里要哪个就把名字写进参数，pytest 自动注入 —— 不用手动创建。
+
+## 接口关联：extract + 占位符
+
+yaml 里声明"提取什么"，后面用例用 `${变量名}` 引用，发送前自动替换：
+
+```yaml
+extract:
+  token: $.access_token        # 从登录响应里取出 token 存进变量池
+  product_id: $.id             # 从创建响应里取出商品 id
+```
+
+```yaml
+path: /products/${product_id}                 # 路径里引用
+headers: {Authorization: "Bearer ${token}"}   # 请求头里引用
+```
+
+执行一条用例的固定 5 步（见 `common/runner.py`）：
+`渲染占位符 → 发请求 → 断言状态码 → extract 提取 → 断言 expect 字段`。
+所以 `testcases/test_extract.py` 里几乎没有代码 —— **加场景只改 yaml**。
 
 ## 练习站点的已知"坑"（都是实测出来的）
 
@@ -58,5 +82,8 @@ api_auto/
 - `PUT /products/{id}`（更新）目前返回 **500**，接口本身有问题 —— 所以用例里没写更新场景
 - 查询不存在的商品返回 **400**（正常应该是 404），测试用例里按 `in (400, 404)` 断言
 - 创建商品必须带 token，不带会返回 400
+- **公共数据会被别人删**：`GET /products/1` 这类写死 id 的用例随时可能变 400，
+  正确做法是先查列表拿一个真实存在的 id 再用（见 `testcases/test_product.py::test_detail`）
+- 请求头里**不能写中文**（会报 `UnicodeEncodeError`）
 
 这些"坑"本身就是接口测试的价值所在：文档写的和实际的往往不一样。

@@ -5,12 +5,24 @@
 import pytest
 
 from common.client import HttpClient
+from common.context import Context
 from common.logger import logger
 from config.settings import BASE_URL, TIMEOUT, USER
 
 
 @pytest.fixture(scope="session")
-def client():
+def ctx():
+    """变量池：整个测试过程共用一份。
+
+    为什么必须是 session 级？
+        变量池的价值就是"上一条用例存进去、下一条用例取出来"。
+        如果每条用例都新建一个空池子，谁也取不到别人存的值，extract 就白做了。
+    """
+    return Context()
+
+
+@pytest.fixture(scope="session")
+def client(ctx):
     """整个测试过程共用一个 HTTP 客户端。
 
     scope="session" 表示：所有用例加起来只创建一次，而不是每条用例都新建。
@@ -18,6 +30,7 @@ def client():
     """
     logger.info("=== 测试开始，base_url = %s ===", BASE_URL)
     http = HttpClient(BASE_URL, TIMEOUT)
+    http.attach_context(ctx)      # 挂上变量池，请求里的 ${xxx} 才会被替换
     yield http
     http.close()
     logger.info("=== 测试结束 ===")

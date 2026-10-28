@@ -17,9 +17,18 @@ class HttpClient:
         self.timeout = timeout
         # Session 会自动保存服务端返回的 Cookie，并在后续请求带上
         self.session = requests.Session()
+        # 变量池：默认没有。挂上之后，请求里的 ${xxx} 才会被自动替换
+        self.context = None
 
     def request(self, method, path, **kwargs):
         """统一的请求入口，get/post/put/delete 最终都调它。"""
+        # 挂了变量池就先渲染：把 /products/${product_id}、Bearer ${token} 换成真实值
+        if self.context:
+            path = self.context.render(path)
+            for key in ("params", "json", "headers"):
+                if kwargs.get(key) is not None:
+                    kwargs[key] = self.context.render(kwargs[key])
+
         url = path if path.startswith("http") else f"{self.base_url}{path}"
 
         logger.info("请求: %s %s", method.upper(), url)
@@ -51,6 +60,13 @@ class HttpClient:
 
     def remove_header(self, key):
         self.session.headers.pop(key, None)
+
+    def attach_context(self, ctx):
+        """把变量池挂到客户端上。挂上之后，所有请求里的 ${xxx} 都会自动替换。
+
+        传进来的 ctx 一般来自 conftest.py 的 ctx fixture（整个测试过程共用一份）。
+        """
+        self.context = ctx
 
     def close(self):
         self.session.close()

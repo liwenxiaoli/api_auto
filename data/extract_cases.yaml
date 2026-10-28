@@ -1,0 +1,74 @@
+# 第 6 周：extract 机制演示用例
+#
+# 相比之前的 yaml，多了三样东西：
+#   request    请求四要素写在一起：method / path / json / headers（比散着放更好读）
+#   extract    提取规则：把响应里的值存进变量池，格式是 "起的名字: jsonpath表达式"
+#   ${变量名}  占位符：path、json、headers、expect 里都能写，发送前自动换成真实值
+#
+# 注意：这几条用例有顺序依赖（后一条要用前一条提取出来的变量），
+# 所以必须从上往下按顺序跑 —— 这既是 extract 的代价，也是它的威力。
+
+- case: 登录成功并把 token 存进变量池
+  request:
+    method: POST
+    path: /auth/login
+    json:
+      email: john@mail.com
+      password: changeme
+  expect_status: 201
+  extract:
+    token: $.access_token
+
+- case: 用变量池里的 token 访问个人信息
+  request:
+    method: GET
+    path: /auth/profile
+    headers:
+      Authorization: "Bearer ${token}"
+  expect_status: 200
+  expect:
+    $.email: john@mail.com
+
+- case: 创建商品并把商品 id 存进变量池
+  request:
+    method: POST
+    path: /products/
+    headers:
+      Authorization: "Bearer ${token}"
+    json:
+      title: extract 练习商品
+      price: 88
+      description: 第6周 extract 演示，用完即删
+      categoryId: 1
+      images: ["https://placeimg.com/640/480/any"]
+  expect_status: 201
+  extract:
+    product_id: $.id
+
+- case: 用变量池里的 id 查询刚创建的商品
+  request:
+    method: GET
+    path: /products/${product_id}
+  expect_status: 200
+  expect:
+    $.title: extract 练习商品
+    $.price: 88
+
+- case: 删除刚创建的商品，清理测试数据
+  request:
+    method: DELETE
+    path: /products/${product_id}
+    headers:
+      Authorization: "Bearer ${token}"
+  expect_status: 200
+
+- case: 密码错误登录失败
+  request:
+    method: POST
+    path: /auth/login
+    json:
+      email: john@mail.com
+      password: wrong_password
+  expect_status: 401
+  expect:
+    $.message: Unauthorized
