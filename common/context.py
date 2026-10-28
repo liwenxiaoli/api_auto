@@ -15,18 +15,25 @@
 """
 import re
 
+from common import functions
+from common.logger import logger
+
 # 匹配 ${xxx} 的正则：
 #   \$   匹配美元符号（前面加 \ 是因为 $ 在正则里有特殊含义）
 #   \{ \} 匹配左右花括号
 #   ([^}]+)  括号里的内容就是变量名，[^}] 表示"不是右括号的任何字符"
 PLACEHOLDER = re.compile(r"\$\{([^}]+)\}")
 
+# 匹配"函数调用"的写法：gen_phone()、random_str(8)
+FUNC_CALL = re.compile(r"^([a-zA-Z_]\w*)\((.*)\)$")
+
 
 class Context:
     """全局共享的变量池（一个测试会话一个实例）。"""
 
     def __init__(self):
-        self.data = {}          # 真正存东西的字典
+        self.data = {}               # 真正存变量的字典
+        self.pending_cleanups = []   # 待清理的数据（测试结束时统一删掉）
 
     def set(self, key, value):
         """往池子里存一个变量。"""
@@ -69,12 +76,48 @@ class Context:
         return PLACEHOLDER.sub(replace_one, text)
 
     def _lookup(self, key):
-        """按名字取变量，取不到就抛一个能看懂的错。"""
+        """按名字取值；如果名字带括号，就当成热加载函数去调用。"""
+        key = key.strip()
+
+        # ${gen_phone()}、${random_str(8)} —— 热加载：执行到这一刻才现算
+        func_match = FUNC_CALL.match(key)
+        if func_match:
+            return self._call_func(func_match.group(1), func_match.group(2))
+
         if key not in self.data:
             raise KeyError(
                 f"占位符 ${{{key}}} 没有值。变量池里现在只有：{list(self.data.keys())}"
             )
         return self.data[key]
+
+    def _call_func(self, name, args_str):
+        """调用 common/functions.py 里的函数（只能调这个模块里定义的）。"""
+        func = getattr(functions, name, None)
+        if func is None or not callable(func):
+            available = [
+                n for n in dir(functions)
+                if not n.startswith("_") and callable(getattr(functions, n))
+            ]
+            raise AttributeError(f"热加载函数 {name} 不存在。可用的有：{available}")
+
+        args = [self._parse_arg(a) for a in args_str.split(",")] if args_str.strip() else []
+        value = func(*args)
+        logger.info("热加载 %s(%s) -> %s", name, args_str, value)
+        return value
+
+    def _parse_arg(self, raw):
+        """把参数字符串转成 Python 值：'8' -> 8，'abc' -> 'abc'。"""
+        s = raw.strip()
+        if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+            return s[1:-1]
+        try:
+            return int(s)
+        except ValueError:
+            return s
+
+    def add_cleanup(self, item):
+        """登记一条清理任务：测试全部结束后统一执行，保证数据不残留。"""
+        self.pending_cleanups.append(item)
 
     def __str__(self):
         return f"Context({self.data})"

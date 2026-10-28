@@ -21,6 +21,28 @@ def ctx():
     return Context()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_test_data(client, ctx):
+    """收尾清理：所有用例跑完后，删掉本轮创建的数据。
+
+    autouse=True 表示不用在用例里写名字，自动生效。
+
+    为什么需要它？
+        yaml 里的用例是"顺序依赖"的：创建 → 查询 → 删除。
+        如果中间某条失败导致后面的"删除"没跑到，商品就残留在测试站了。
+        有了这个兜底，不管中间发生什么，结束时都会清干净。
+    """
+    yield
+
+    if not ctx.pending_cleanups:
+        return
+    for item in ctx.pending_cleanups:
+        resp = client.request(
+            item["method"], item["path"], headers=item.get("headers") or {}
+        )
+        logger.info("清理测试数据 %s %s -> %s", item["method"], item["path"], resp.status_code)
+
+
 @pytest.fixture(scope="session")
 def client(ctx):
     """整个测试过程共用一个 HTTP 客户端。

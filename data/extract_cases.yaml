@@ -29,14 +29,14 @@
   expect:
     $.email: john@mail.com
 
-- case: 创建商品并把商品 id 存进变量池
+- case: 创建商品并把 id 存进变量池（标题用热加载生成，每次都不一样）
   request:
     method: POST
     path: /products/
     headers:
       Authorization: "Bearer ${token}"
     json:
-      title: extract 练习商品
+      title: "auto-${random_str(8)}"      # 热加载：跑到这里才现生成一个随机后缀
       price: 88
       description: 第6周 extract 演示，用完即删
       categoryId: 1
@@ -44,23 +44,21 @@
   expect_status: 201
   extract:
     product_id: $.id
+    product_title: $.title                # 把真实生成的标题也存下来，下一条好断言
+  cleanup:                                # 兜底清理：不管后面成功失败，结束都会删掉
+    method: DELETE
+    path: /products/${product_id}
+    headers:
+      Authorization: "Bearer ${token}"
 
-- case: 用变量池里的 id 查询刚创建的商品
+- case: 用变量池里的 id 和标题查询刚创建的商品
   request:
     method: GET
     path: /products/${product_id}
   expect_status: 200
   expect:
-    $.title: extract 练习商品
+    $.title: ${product_title}             # 期望值也能用占位符
     $.price: 88
-
-- case: 删除刚创建的商品，清理测试数据
-  request:
-    method: DELETE
-    path: /products/${product_id}
-    headers:
-      Authorization: "Bearer ${token}"
-  expect_status: 200
 
 - case: 密码错误登录失败
   request:

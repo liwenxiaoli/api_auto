@@ -33,6 +33,7 @@ api_auto/
 ├─ common/
 │  ├─ client.py        # HttpClient：requests.Session 封装（拼地址、超时、日志、渲染占位符）
 │  ├─ context.py       # 变量池：存/取变量，把 ${token} 换成真实值
+│  ├─ functions.py     # 热加载函数：yaml 里写 ${gen_phone()} 时现调现算
 │  ├─ extractor.py     # extract：按 jsonpath 规则把响应里的值存进变量池
 │  ├─ runner.py        # 通用用例执行器：一份 yaml 数据 → 一次完整调用
 │  ├─ yaml_util.py     # 读 data/ 下的用例数据
@@ -75,6 +76,31 @@ headers: {Authorization: "Bearer ${token}"}   # 请求头里引用
 执行一条用例的固定 5 步（见 `common/runner.py`）：
 `渲染占位符 → 发请求 → 断言状态码 → extract 提取 → 断言 expect 字段`。
 所以 `testcases/test_extract.py` 里几乎没有代码 —— **加场景只改 yaml**。
+
+### 热加载函数
+
+yaml 里写函数调用，执行到那一刻才现算，解决"数据每次跑必须不一样"：
+
+```yaml
+title: "auto-${random_str(8)}"     # 随机标题，避免重复
+phone: "${gen_phone()}"            # 随机手机号
+order_no: "${timestamp()}"         # 时间戳
+```
+
+可用函数见 `common/functions.py`；**只能调用该模块里定义的函数**（`context.py` 做了限制）。
+
+### 测试数据自动清理
+
+用例加 `cleanup` 字段，框架登记下来，全部跑完后统一删除：
+
+```yaml
+  cleanup:
+    method: DELETE
+    path: /products/${product_id}
+    headers: {Authorization: "Bearer ${token}"}
+```
+
+登记发生在 expect 断言**之前**，所以中间断言失败也会清干净（见 `conftest.py::cleanup_test_data`）。
 
 ## 练习站点的已知"坑"（都是实测出来的）
 

@@ -48,8 +48,13 @@ def run_case(client, case, ctx):
 
     data = resp.json() if resp.text else None
 
-    # 断言 2：先提取变量（给后面的用例用），再校验本条响应
+    # 断言 2：先提取变量（给后面的用例用）
     extract(data, case.get("extract"), ctx)
+
+    # 登记清理任务：写在 expect 断言之前是有意的 ——
+    # 万一后面的断言失败（抛异常），这条数据也已经被记下来，测试结束时照样会被删掉
+    if case.get("cleanup"):
+        ctx.add_cleanup(ctx.render(case["cleanup"]))
 
     # 断言 3：逐个校验响应字段
     for expr, expected in (case.get("expect") or {}).items():
