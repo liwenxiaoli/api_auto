@@ -1,13 +1,47 @@
 """pytest 全局 fixture：管理 HTTP 客户端和登录 token。
 
-这个文件是接口自动化的"枢纽"，重点看两个 fixture 的作用域（scope）。
+这个文件是接口自动化的"枢纽"，重点看三个东西：
+    1. pytest_addoption / pytest_configure —— 注册 --env 参数并切换环境
+    2. fixture 的作用域（scope）
+    3. 收尾清理（autouse + yield）
 """
 import pytest
 
 from common.client import HttpClient
 from common.context import Context
 from common.logger import logger
-from config.settings import BASE_URL, TIMEOUT, USER
+from config.settings import settings   # settings 是 Config 对象（不是模块名，别写成 from config import settings）
+
+
+def pytest_addoption(parser):
+    """注册自定义命令行参数。写在这里，pytest 启动时才认识 --env。"""
+    parser.addoption(
+        "--env",
+        action="store",
+        default=settings.env,          # 不传就用 config.yaml 里的 default_env
+        help=f"运行环境，可选：{settings.available_envs}",
+    )
+
+
+def pytest_configure(config):
+    """所有用例跑之前的钩子：在这里把配置切到指定环境。
+
+    为什么放这里？
+        它在任何 fixture 之前执行，保证 client 创建时读到的已经是新环境的地址。
+    """
+    env = config.getoption("--env")
+    try:
+        settings.configure(env)
+    except KeyError as e:
+        # UsageError 会让 pytest 输出友好的提示并退出，而不是抛一堆红字堆栈
+        raise pytest.UsageError(str(e))
+
+
+def pytest_report_header(config):
+    """在 pytest 输出的最开头加一行 —— 一眼看清这轮跑的是哪个环境。"""
+    return (f"运行环境: {settings.env} | "
+            f"base_url: {settings.base_url} | "
+            f"timeout: {settings.timeout}")
 
 
 @pytest.fixture(scope="session")
@@ -50,8 +84,8 @@ def client(ctx):
     scope="session" 表示：所有用例加起来只创建一次，而不是每条用例都新建。
     好处：Session 复用了 TCP 连接和 Cookie，跑得更快，也更接近真实用户行为。
     """
-    logger.info("=== 测试开始，base_url = %s ===", BASE_URL)
-    http = HttpClient(BASE_URL, TIMEOUT)
+    logger.info("=== 测试开始，环境 = %s，base_url = %s ===", settings.env, settings.base_url)
+    http = HttpClient(settings.base_url, settings.timeout)
     http.attach_context(ctx)      # 挂上变量池，请求里的 ${xxx} 才会被替换
     yield http
     http.close()
@@ -66,7 +100,10 @@ def token(client):
     1. scope="session"：只登录一次。如果每条用例都登录一遍，慢且容易被限流
     2. 登录失败要在 fixture 里直接报错，否则后面所有用例都会以奇怪的方式失败
     """
-    resp = client.post("/auth/login", json={"email": USER["email"], "password": USER["password"]})
+    resp = client.post("/auth/login", json={
+        "email": settings.user["email"],
+        "password": settings.user["password"],
+    })
     assert resp.status_code == 201, f"登录失败，状态码 {resp.status_code}，响应 {resp.text}"
     access_token = resp.json()["access_token"]
     logger.info("登录成功，拿到 token: %s...", access_token[:20])

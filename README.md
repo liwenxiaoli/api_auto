@@ -15,21 +15,66 @@ pytest
 # 只跑登录模块
 pytest testcases/test_auth.py
 
-# 出 Allure 报告
-pytest --alluredir=reports/allure-results
-allure serve reports/allure-results
+# 切环境跑（dev / test，配置在 config/config.yaml）
+pytest --env=test
+
+# 一键跑 + 出 Allure 报告（推荐：会先清掉上一轮的旧结果）
+python run.py
+python run.py --env=test
+python run.py --case testcases/test_extract.py
 ```
 
 > 说明：本机的 `D:\python\python.exe` 已经装好了全部依赖，
 > PyCharm 里把解释器选成它就能直接跑，不用新建虚拟环境。
+
+## 多环境配置
+
+一套代码跑多个环境，切换只靠命令行参数，**不改代码、不改 yaml**：
+
+```bash
+pytest --env=test          # 不传则用 config.yaml 里的 default_env
+```
+
+```yaml
+# config/config.yaml
+default_env: dev
+
+environments:
+  dev:  {base_url: https://api.escuelajs.co/api/v1, timeout: 15, user: {...}}
+  test: {base_url: https://api.escuelajs.co/api/v1, timeout: 30, user: {...}}
+```
+
+实现在 `config/settings.py` 的 `Config.configure()`：环境不存在直接报
+`环境 [xxx] 不存在。可用环境：['dev', 'test']`，绝不静默用默认值。
+`conftest.py` 里用 `pytest_addoption` 注册 `--env`、`pytest_configure` 里切换。
+
+跑起来输出第一行就能看到环境：
+
+```
+运行环境: test | base_url: https://api.escuelajs.co/api/v1 | timeout: 30
+```
+
+## Allure 报告
+
+`run.py` 做了四件事：清掉上轮结果 → 跑 pytest（`--alluredir`）→ 写环境信息 → `allure generate` 出网页报告。
+报告在 `reports/allure-report/index.html`。
+
+```bash
+python run.py --open      # 出完自动起本地服务并打开浏览器（推荐）
+```
+
+> ⚠️ **别直接双击 index.html**：Allure 报告用 fetch 加载 json，
+> `file://` 协议会被浏览器拦下 → 打开是白屏。要走 http（`--open` 或 `allure open`）。
+
+报告首页的 ENVIRONMENT 区块会显示这轮跑的环境（run.py 写的 `environment.properties`）。
 
 ## 目录说明
 
 ```
 api_auto/
 ├─ config/
-│  ├─ config.yaml      # base_url、超时、账号 —— 改环境只动这里
-│  └─ settings.py      # 把 yaml 读成常量供代码使用
+│  ├─ config.yaml      # environments：dev / test 两套环境（地址、超时、账号）
+│  └─ settings.py      # Config 对象：读 yaml + 按 --env 切换环境
 ├─ common/
 │  ├─ client.py        # HttpClient：requests.Session 封装（拼地址、超时、日志、渲染占位符）
 │  ├─ context.py       # 变量池：存/取变量，把 ${token} 换成真实值
@@ -42,7 +87,8 @@ api_auto/
 ├─ data/               # 用例数据（yaml）
 ├─ testcases/          # 用例
 ├─ docs/               # 学习指南、练习说明
-├─ conftest.py         # fixture：ctx / client / token / auth_client
+├─ conftest.py         # fixture：ctx / client / token / auth_client + --env 参数
+├─ run.py              # 一键跑：清结果 → pytest → allure generate
 ├─ pytest.ini
 └─ requirements.txt
 ```

@@ -1,12 +1,24 @@
 # 接口自动化项目配置
-# 改环境只需要改这里，代码里不写死地址
+# 一套代码跑多个环境：pytest --env=test
+# 切换环境不用改代码，只改命令行参数
 
-base_url: https://api.escuelajs.co/api/v1
+# 不传 --env 时用哪个环境
+default_env: dev
 
-# 请求超时（秒）。接口自动化必须设超时 —— 否则接口挂了你的用例会永远卡住
-timeout: 15
+environments:
+  # 开发/联调环境：超时短一点，问题暴露得早
+  dev:
+    base_url: https://api.escuelajs.co/api/v1
+    timeout: 15        # 请求超时（秒）。接口自动化必须设超时 —— 否则接口挂了用例会永远卡住
+    user:
+      email: john@mail.com
+      password: changeme
 
-# 登录账号（公开练习站，账号密码是官方示例账号）
-user:
-  email: john@mail.com
-  password: changeme
+  # 测试环境：真实项目里这里会换成另一个域名、另一套账号
+  # （练习站只有一套地址，所以这里用 timeout 不同来演示"切换确实生效"）
+  test:
+    base_url: https://api.escuelajs.co/api/v1
+    timeout: 30
+    user:                          # 练习站只有一套账号；真实项目里这里会是另一套
+      email: john@mail.com
+      password: changeme
