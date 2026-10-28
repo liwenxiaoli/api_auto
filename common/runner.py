@@ -10,6 +10,32 @@
 from common.extractor import extract
 from common.json_util import json_get
 from common.logger import logger
+from common.sign import add_sign
+
+
+def _apply_sign(kwargs, conf, ctx):
+    """按 yaml 里的 sign 配置给请求签名（第 8 周）。
+
+    yaml 写法：
+        sign:
+          secret: my_secret     # 密钥（真实项目里应从配置/环境变量读，不要写死在 yaml）
+          on: params            # 对谁签名：params / json（默认 params）
+          in: params            # 签名值放哪：params / headers（默认跟 on 一样）
+          field: sign           # 签名字段名（默认 sign）
+    """
+    secret = ctx.render(conf["secret"])        # 密钥也支持 ${...}，方便从配置读
+    field = conf.get("field", "sign")
+    source_name = conf.get("on", "params")     # 参与签名的参数
+    target_name = conf.get("in", source_name)  # 签名值放哪儿
+
+    source = kwargs.get(source_name) or {}
+    signed = add_sign(source, secret, field)
+
+    if target_name == source_name:
+        kwargs[target_name] = signed
+    else:
+        kwargs.setdefault(target_name, {})[field] = signed[field]
+    return kwargs
 
 
 def run_case(client, case, ctx):
@@ -39,6 +65,10 @@ def run_case(client, case, ctx):
     if req.get("headers"):
         # headers 走 kwargs 是"一次性"的，只在这一条请求生效，不会污染后面的用例
         kwargs["headers"] = ctx.render(req["headers"])
+
+    # 可选：请求签名（第 8 周）—— 算完把 sign 塞进参数/请求头
+    if case.get("sign"):
+        kwargs = _apply_sign(kwargs, case["sign"], ctx)
 
     # path 里的 ${product_id} 由 client 自动渲染（见 client.request）
     resp = client.request(req["method"], req["path"], **kwargs)

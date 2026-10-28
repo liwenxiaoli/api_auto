@@ -1,0 +1,45 @@
+name: 接口自动化测试
+
+# 什么时候跑：
+on:
+  push:
+    branches: [main]        # 推代码到 main 就跑
+  pull_request:             # 有人提 PR 也跑
+  schedule:
+    - cron: '0 2 * * *'     # 每天定时跑（UTC 时间 2:00 = 北京时间 10:00）
+  workflow_dispatch:        # 允许在 GitHub 网页上手动点一下就跑
+
+jobs:
+  api-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉代码
+        uses: actions/checkout@v4
+
+      - name: 装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 跑测试
+        env:
+          PYTHONIOENCODING: utf-8      # 不然 Windows 之外的环境也可能被编码坑到
+        run: |
+          python -m pytest testcases \
+            --alluredir=allure-results \
+            --html=report.html --self-contained-html
+
+      - name: 上传报告
+        if: always()          # 关键：失败也要上传，否则不知道是哪条挂的
+        uses: actions/upload-artifact@v4
+        with:
+          name: 测试报告
+          path: |
+            report.html
+            allure-results

@@ -70,3 +70,16 @@
   expect_status: 401
   expect:
     $.message: Unauthorized
+
+# 第 8 周：签名演示。服务端不校验签名（会忽略不认识的 sign 参数），
+# 但日志里能看到 sign 被算出来并真的发出去了 —— 这就是"框架支持签名"的证据。
+- case: 带签名查询商品列表
+  request:
+    method: GET
+    path: /products
+    params:
+      limit: 2
+  sign:
+    secret: my_secret          # 真实项目应从配置/环境变量读，不要写死在这里
+  expect_status: 200
+  # 不写 expect：列表数据是公共环境共享的，断言具体字段随时会变红

@@ -1,7 +1,11 @@
 # api_auto —— 接口自动化练习项目
 
+![接口自动化测试](https://github.com/liwenxiaoli/api_auto/actions/workflows/api-test.yml/badge.svg)
+
 用 `requests + pytest + yaml` 搭的接口自动化框架，练手站点是
 [escuelajs](https://api.escuelajs.co)（一个公开的 REST 示例 API，支持登录、商品增删改查）。
+
+**26 条用例**：18 条接口用例 + 7 条签名工具单测 + 1 条带签名的接口演示。
 
 ## 怎么跑
 
@@ -68,6 +72,44 @@ python run.py --open      # 出完自动起本地服务并打开浏览器（推�
 
 报告首页的 ENVIRONMENT 区块会显示这轮跑的环境（run.py 写的 `environment.properties`）。
 
+## 请求签名（sign）
+
+签名规则：去掉空值和 `sign` 本身 → 参数名排序 → 拼 `k1=v1&k2=v2` → 尾部拼密钥 → md5。
+实现在 `common/sign.py`（不依赖网络，所以有独立的单元测试 `testcases/test_sign.py`，7 条）。
+
+框架里怎么用？yaml 用例加一个 `sign` 字段，框架自动算好再发：
+
+```yaml
+- case: 带签名查询商品列表
+  request:
+    method: GET
+    path: /products
+    params: {limit: 2}
+  sign:
+    secret: my_secret     # 真实项目应从配置/环境变量读，不要写死在 yaml
+    on: params            # 对谁签名：params / json（默认 params）
+    in: params            # 签名值放哪：params / headers（默认跟 on 一样）
+  expect_status: 200
+```
+
+日志能看到签名确实被算出来并发出去：
+
+```
+签名原始串: limit=2&key=my_secret
+签名结果 sign = aa62e28daa4bd9eb1c4222eb7629521d
+```
+
+> 签名算错会导致接口全量 401、几十条用例一起红，根本看不出是签名的问题 ——
+> 所以签名逻辑单独写单测，接口用例失败时就只需怀疑"参数/环境"，排查范围小一大半。
+
+## CI：GitHub Actions 自动跑
+
+`.github/workflows/api-test.yml` 配置了三种触发：推代码到 main、提 PR、**每天定时（北京时间 10:00）**，
+也可以在 GitHub 网页上手动点 Run workflow。
+
+跑完会把 html 报告和 allure 原始数据打包成 artifact 上传（`if: always()` 保证失败也上传）。
+README 顶部的徽章就是它的运行状态。
+
 ## 目录说明
 
 ```
@@ -79,6 +121,7 @@ api_auto/
 │  ├─ client.py        # HttpClient：requests.Session 封装（拼地址、超时、日志、渲染占位符）
 │  ├─ context.py       # 变量池：存/取变量，把 ${token} 换成真实值
 │  ├─ functions.py     # 热加载函数：yaml 里写 ${gen_phone()} 时现调现算
+│  ├─ sign.py          # 签名工具：参数排序 + 拼密钥 + md5（有独立单元测试）
 │  ├─ extractor.py     # extract：按 jsonpath 规则把响应里的值存进变量池
 │  ├─ runner.py        # 通用用例执行器：一份 yaml 数据 → 一次完整调用
 │  ├─ yaml_util.py     # 读 data/ 下的用例数据
@@ -86,6 +129,7 @@ api_auto/
 │  └─ logger.py        # 日志（logs/api.log）
 ├─ data/               # 用例数据（yaml）
 ├─ testcases/          # 用例
+├─ .github/workflows/  # GitHub Actions：推代码/每天定时自动跑
 ├─ docs/               # 学习指南、练习说明
 ├─ conftest.py         # fixture：ctx / client / token / auth_client + --env 参数
 ├─ run.py              # 一键跑：清结果 → pytest → allure generate
