@@ -80,6 +80,9 @@ def main():
     if opts.open_report and index.exists():
         serve_report()
 
+    # 用 pytest 的退出码作为整个脚本的退出码：0=全过，非 0=有失败（CI 靠它判断成败）
+    sys.exit(result.returncode)
+
 
 def serve_report():
     """起一个本地服务打开报告。
@@ -101,8 +104,6 @@ def serve_report():
     print(f"报告地址：{url}")
     webbrowser.open(url)
     input("预览服务已启动，看完按回车结束...")
-
-    sys.exit(result.returncode)
 
 
 if __name__ == "__main__":
