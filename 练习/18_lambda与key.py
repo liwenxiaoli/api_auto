@@ -10,6 +10,7 @@ prices = [item["price"] for item in items]
 print("最贵:", max(prices))
 print("最便宜:", min(prices))
 
+
 # 想要"最贵的那个商品"（整个字典），用 key=
 best = max(items, key=lambda x: x["price"])
 print("最贵的商品:", best["title"], best["price"])

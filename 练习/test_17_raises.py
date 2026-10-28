@@ -16,3 +16,4 @@ def test_还能顺便检查异常内容():
     with pytest.raises(ValueError) as e:
         raise ValueError("用户名不能为空")
     assert "不能为空" in str(e.value)
+
