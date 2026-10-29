@@ -7,8 +7,10 @@
     脚本里，每加一个接口就要再写一遍 requests 调用 + 断言；
     框架里，这些都写一次，数据只负责描述"这次要调什么、期望什么"。
 """
+import allure
+
+from common.asserter import assert_expect, assert_status
 from common.extractor import extract
-from common.json_util import json_get
 from common.logger import logger
 from common.sign import add_sign
 
@@ -54,6 +56,12 @@ def run_case(client, case, ctx):
         expect:
           $.email: john@mail.com
     """
+    # 报告分层：yaml 里写了 feature / story，报告里就能按模块折叠
+    if case.get("feature"):
+        allure.dynamic.feature(case["feature"])
+    if case.get("story"):
+        allure.dynamic.story(case["story"])
+
     req = case["request"]
 
     # 只把 yaml 里写了的字段传给 requests，没写的不要传 None（会污染请求）
@@ -73,8 +81,8 @@ def run_case(client, case, ctx):
     # path 里的 ${product_id} 由 client 自动渲染（见 client.request）
     resp = client.request(req["method"], req["path"], **kwargs)
 
-    # 断言 1：状态码。失败时把真实响应打出来，一眼能看出是服务端问题还是用例问题
-    assert resp.status_code == case["expect_status"], f"实际响应: {resp.text}"
+    # 断言 1：状态码（支持 [400, 404] 这种"多个都算对"的写法）
+    assert_status(resp, case["expect_status"])
 
     data = resp.json() if resp.text else None
 
@@ -86,13 +94,8 @@ def run_case(client, case, ctx):
     if case.get("cleanup"):
         ctx.add_cleanup(ctx.render(case["cleanup"]))
 
-    # 断言 3：逐个校验响应字段
-    for expr, expected in (case.get("expect") or {}).items():
-        actual = json_get(data, expr)
-        # 期望值也可能是 ${...}，所以同样要渲染
-        assert actual == ctx.render(expected), (
-            f"字段 {expr} 期望 {expected}，实际 {actual}，完整响应: {data}"
-        )
+    # 断言 3：逐个校验响应字段（三种写法见 common/asserter.py 顶部）
+    assert_expect(data, case.get("expect"), ctx)
 
     logger.info("用例执行完成: %s", case["case"])
     return resp

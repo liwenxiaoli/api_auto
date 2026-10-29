@@ -1,16 +1,97 @@
-# 商品查询用例数据
-# 这个站有个坑：limit 参数必须和 offset 一起传才生效
-# （只传 limit=1 会返回全部 143 条）—— 用例里专门留了一条来验证这个行为
+# 商品模块用例数据（统一结构，与 auth_cases.yaml / extract_cases.yaml 完全一致）
+#
+# ⚠️ 这个文件里的用例是**顺序依赖**的：
+#    取 id → 查详情；创建商品 → 查刚创建的商品。
+#    顺序依赖是 extract 机制的代价，也是它的威力（用上一条响应的值驱动下一条请求）。
+#    单独用 -k 挑其中一条跑会失败，要跑就整个文件跑。
 
 - case: 分页查询第一页1条
-  params:
-    limit: 1
-    offset: 0
+  story: 列表查询
+  request:
+    method: GET
+    path: /products
+    params:
+      limit: 1
+      offset: 0        # 这个站的坑：limit 必须和 offset 一起传才生效
   expect_status: 200
-  expect_count: 1
+  expect:
+    "@length": 1       # @ 开头的 key 必须加引号
 
 - case: 按标题关键字查询
-  params:
-    title: Shoes
+  story: 列表查询
+  request:
+    method: GET
+    path: /products
+    params:
+      title: Shoes
   expect_status: 200
-  expect_contain: Shoes
+  expect:
+    "@not_empty": true
+    $[*].title: {contains: Shoes}          # 每一条结果都要包含关键字
+
+- case: 取一个真实存在的商品 id
+  story: 商品详情
+  request:
+    method: GET
+    path: /products
+    params: {limit: 1, offset: 0}
+  expect_status: 200
+  extract:
+    any_id: $[0].id          # 不写死 id：公共测试站的数据随时可能被别人删
+  expect:
+    $[0].id: {not_empty: true}
+
+- case: 查询商品详情
+  story: 商品详情
+  request:
+    method: GET
+    path: /products/${any_id}
+  expect_status: 200
+  expect:
+    $.id: ${any_id}
+    $.category.name: {not_empty: true}     # 嵌套字段：category 里的 name
+
+- case: 查询不存在的商品
+  story: 异常场景
+  request:
+    method: GET
+    path: /products/999999999
+  expect_status: [400, 404]                # 这个站返回 400，合理的设计应该是 404
+  expect:
+    $.name: EntityNotFoundError
+
+- case: 创建商品（跑完自动清理）
+  story: 商品管理（需登录）
+  request:
+    method: POST
+    path: /products/
+    headers:
+      Authorization: "Bearer ${token}"
+    json:
+      title: "auto-${random_str(8)}"       # 热加载：每次跑都是新标题
+      price: 99
+      description: 由接口自动化用例创建，跑完自动删除
+      categoryId: 1
+      images: ["https://placeimg.com/640/480/any"]
+  expect_status: 201
+  extract:
+    product_id: $.id
+    product_title: $.title
+  expect:
+    $.id: {not_empty: true}
+    $.price: 99
+  cleanup:                                 # 兜底清理：中间断言失败也会删干净
+    method: DELETE
+    path: /products/${product_id}
+    headers:
+      Authorization: "Bearer ${token}"
+
+- case: 查询刚创建的商品
+  story: 商品管理（需登录）
+  request:
+    method: GET
+    path: /products/${product_id}
+  expect_status: 200
+  expect:
+    $.title: ${product_title}
+    $.price: 99

@@ -5,7 +5,15 @@
 用 `requests + pytest + yaml` 搭的接口自动化框架，练手站点是
 [escuelajs](https://api.escuelajs.co)（一个公开的 REST 示例 API，支持登录、商品增删改查）。
 
-**26 条用例**：18 条接口用例 + 7 条签名工具单测 + 1 条带签名的接口演示。
+**28 条用例，接口用例全部数据驱动**：用例只描述"调什么、期望什么"，执行逻辑写在框架里。
+
+| 用例文件 | 数据文件 | 条数 |
+|---|---|---|
+| `test_auth.py` | `data/auth_cases.yaml` | 4（登录成功/失败、带 token、不带 token） |
+| `test_product.py` | `data/product_cases.yaml` | 7（分页、关键字、详情、异常、创建+查询） |
+| `test_extract.py` | `data/extract_cases.yaml` | 6（extract 关联 + 热加载 + 清理） |
+| `test_sign.py` | — | 7（签名工具单测，不联网） |
+| `test_my_first.py` | — | 4（第 1 课手写用例，保留作对比） |
 
 ## 怎么跑
 
@@ -124,6 +132,7 @@ api_auto/
 │  ├─ sign.py          # 签名工具：参数排序 + 拼密钥 + md5（有独立单元测试）
 │  ├─ extractor.py     # extract：按 jsonpath 规则把响应里的值存进变量池
 │  ├─ runner.py        # 通用用例执行器：一份 yaml 数据 → 一次完整调用
+│  ├─ asserter.py      # 统一断言：相等 / contains / not_empty / gt / lt / 整体断言
 │  ├─ yaml_util.py     # 读 data/ 下的用例数据
 │  ├─ json_util.py     # jsonpath 取值工具
 │  └─ logger.py        # 日志（logs/api.log）
@@ -137,16 +146,45 @@ api_auto/
 └─ requirements.txt
 ```
 
-## 四个 fixture 的区别（conftest.py）
+## 五个 fixture 的区别（conftest.py）
 
 | fixture | 作用域 | 用途 |
 |---|---|---|
 | `ctx` | session | 变量池，配合 extract 与 `${}` 占位符使用 |
+| `init_context` | session（autouse） | 自动把登录 token 放进变量池，yaml 里可直接写 `${token}` |
+| `cleanup_test_data` | session（autouse） | 收尾统一删除本轮创建的数据 |
 | `client` | session | 未登录的客户端，查公开接口用 |
 | `token` | session | 只登录一次，所有用例共用 |
-| `auth_client` | function | 带 `Authorization` 头的客户端，测需要登录的接口 |
+| `auth_client` | function | 带 `Authorization` 头的客户端（改造后暂无用例使用，保留演示 `remove_header` 的坑） |
 
 用例里要哪个就把名字写进参数，pytest 自动注入 —— 不用手动创建。
+（`autouse=True` 的两个不用写名字，自动生效。）
+
+## yaml 用例字段速查
+
+所有 `data/*.yaml` 结构完全一致，加场景只改这里：
+
+```yaml
+- case: 用例名                      # 显示在 pytest 输出和报告里
+  story: 报告里的二级分组
+  request:
+    method: GET
+    path: /products/${product_id}   # 支持 ${} 占位符
+    params: {limit: 1}
+    json: {title: "auto-${random_str(8)}"}
+    headers: {Authorization: "Bearer ${token}"}
+  expect_status: 200                # 也可写 [400, 404] 多个都算对
+  extract: {product_id: $.id}       # 取响应里的值存进变量池
+  expect:
+    $.email: john@mail.com          # ① 相等
+    $.price: {gt: 0}                # ② 高级：contains / not_empty / gt / lt
+    "@length": 1                    # ③ 对整份响应断言（@ 必须加引号）
+  cleanup:                          # 兜底清理，测试结束统一执行
+    method: DELETE
+    path: /products/${product_id}
+    headers: {Authorization: "Bearer ${token}"}
+  sign: {secret: my_secret}         # 可选：自动算签名
+```
 
 ## 接口关联：extract + 占位符
 

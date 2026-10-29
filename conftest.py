@@ -56,6 +56,18 @@ def ctx():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def init_context(ctx, token):
+    """把登录 token 提前放进变量池，yaml 里就能直接写 ${token}。
+
+    autouse=True：不用在用例里写它的名字，自动生效。
+    有了它，yaml 用例就不用先登录一次才能拿到 token 了 ——
+    "登录拿 token" 这种公共前置，交给框架做，用例只管自己的业务。
+    """
+    ctx.set("token", token)
+    return ctx
+
+
+@pytest.fixture(scope="session", autouse=True)
 def cleanup_test_data(client, ctx):
     """收尾清理：所有用例跑完后，删掉本轮创建的数据。
 
@@ -116,6 +128,11 @@ def auth_client(client, token):
 
     注意这里是 function 级 —— 每条用例用完都把 header 摘掉，
     保证下一条用例是干净的（否则"不需要登录"的用例也会被带上 token，测不准）。
+
+    【现状】用例全部改成 yaml 驱动后，这个 fixture 暂时没人用了 ——
+    因为 yaml 里写 `headers: {Authorization: "Bearer ${token}"}` 是一次性的，
+    天然不会污染别的用例，比它更省事。保留在这里是为了演示"用完记得摘掉"这个坑
+    （把下面 remove_header 注释掉，再跑"不带 token"的用例就会变绿不起来）。
     """
     client.set_header("Authorization", f"Bearer {token}")
     yield client

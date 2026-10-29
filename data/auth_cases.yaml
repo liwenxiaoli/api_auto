@@ -1,21 +1,55 @@
-# 登录用例数据
-# 字段说明：
-#   case       用例显示名（会出现在 pytest 输出里）
-#   body       请求体
-#   expect_status  期望的状态码
-#   expect_token   是否期望返回 token
-#   expect_message 期望的错误信息（失败场景才写）
+# 登录鉴权用例数据（统一结构：request / expect_status / extract / expect）
+#
+# 字段速查：
+#   case           用例名（显示在 pytest 输出和报告里）
+#   story          报告里的二级分组
+#   request        请求：method / path / params / json / headers
+#   expect_status  期望状态码（也可以写 [400, 404] 表示多个都算对）
+#   extract        从响应里取值存进变量池，如 {token: $.access_token}
+#   expect         断言，三种写法：
+#                    $.email: john@mail.com        取出来等于这个值
+#                    $.price: {gt: 0}              高级断言 contains/not_empty/gt/lt
+#                    "@length": 1                  对整份响应断言（@ 必须加引号）
 
 - case: 正确账号登录成功
-  body:
-    email: john@mail.com
-    password: changeme
+  story: 登录
+  request:
+    method: POST
+    path: /auth/login
+    json:
+      email: john@mail.com
+      password: changeme
   expect_status: 201
-  expect_token: true
+  expect:
+    $.access_token: {not_empty: true}      # 登录成功却没 token，是最该发现的 bug
 
 - case: 密码错误登录失败
-  body:
-    email: john@mail.com
-    password: wrong_password
+  story: 登录
+  request:
+    method: POST
+    path: /auth/login
+    json:
+      email: john@mail.com
+      password: wrong_password
   expect_status: 401
-  expect_message: Unauthorized
+  expect:
+    $.message: Unauthorized
+
+- case: 用 token 访问个人信息
+  story: 鉴权
+  request:
+    method: GET
+    path: /auth/profile
+    headers:
+      Authorization: "Bearer ${token}"     # token 由 conftest 的 init_context 提前放进变量池
+  expect_status: 200
+  expect:
+    $.email: john@mail.com
+    $.id: {not_empty: true}
+
+- case: 不带 token 访问受保护接口
+  story: 鉴权
+  request:
+    method: GET
+    path: /auth/profile
+  expect_status: 401
