@@ -17,6 +17,19 @@
   expect:
     "@length": 1       # @ 开头的 key 必须加引号
 
+- case: 分页查询第二页1条
+  story: 列表查询
+  request:
+    method: GET
+    path: /products
+    params:
+      limit: 1
+      offset: 1        # 这个站的坑：limit 必须和 offset 一起传才生效
+  expect_status: 200
+  expect:
+    "@length": 1       # @ 开头的 key 必须加引号
+
+
 - case: 按标题关键字查询
   story: 列表查询
   request:

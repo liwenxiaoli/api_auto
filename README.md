@@ -5,12 +5,12 @@
 用 `requests + pytest + yaml` 搭的接口自动化框架，练手站点是
 [escuelajs](https://api.escuelajs.co)（一个公开的 REST 示例 API，支持登录、商品增删改查）。
 
-**28 条用例，接口用例全部数据驱动**：用例只描述"调什么、期望什么"，执行逻辑写在框架里。
+**29 条用例，接口用例全部数据驱动**：用例只描述"调什么、期望什么"，执行逻辑写在框架里。
 
 | 用例文件 | 数据文件 | 条数 |
 |---|---|---|
 | `test_auth.py` | `data/auth_cases.yaml` | 4（登录成功/失败、带 token、不带 token） |
-| `test_product.py` | `data/product_cases.yaml` | 7（分页、关键字、详情、异常、创建+查询） |
+| `test_product.py` | `data/product_cases.yaml` | 8（分页、关键字、详情、异常、创建+查询） |
 | `test_extract.py` | `data/extract_cases.yaml` | 6（extract 关联 + 热加载 + 清理） |
 | `test_sign.py` | — | 7（签名工具单测，不联网） |
 | `test_my_first.py` | — | 4（第 1 课手写用例，保留作对比） |
