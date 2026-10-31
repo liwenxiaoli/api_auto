@@ -1,0 +1,28 @@
+- case: 登录
+  request:
+    method: POST
+    path: /auth/login
+    json:
+      email: john@mail.com
+      password: changeme
+  expect_status: 201
+  extract:
+    my_token: $.access_token
+
+
+
+
+- case: 查个人信息
+  request:
+    method: GET
+    path: /auth/profile
+    headers:
+        Authorization: "Bearer ${my_token}"
+  expect_status: 200
+  expect:
+    $.email: john@mail.com
+
+
+
+
+
