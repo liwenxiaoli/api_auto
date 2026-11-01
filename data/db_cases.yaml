@@ -1,0 +1,32 @@
+- case: 创建商品后数据库里应有该记录
+  feature: 数据库校验
+  story: 创建
+  request:
+    method: POST
+    path: /products
+    json: {name: 小米15, price: 4999, stock: 30}
+  expect_status: 201
+  extract:
+    product_id: $.id
+  expect:
+    $.name: 小米15
+  db_assert:
+    sql: SELECT name, price, stock FROM products WHERE id = ${product_id}
+    expect: [小米15, 4999, 30]
+  cleanup:
+    method: DELETE
+    path: /products/${product_id}
+
+
+
+- case: 删除商品后数据库里应查不到
+  feature: 数据库校验
+  story: 删除
+  request:
+    method: DELETE
+    path: /products/${product_id}
+  expect_status: 200
+  db_assert:
+    sql: SELECT id, name FROM products WHERE id = ${product_id}
+    expect: null
+

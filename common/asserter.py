@@ -17,6 +17,8 @@ yaml 里能写的三种写法：
 """
 from common.json_util import json_get
 from common.logger import logger
+from common.db import query_one
+from config.settings import settings
 
 
 def assert_status(resp, expected):
@@ -47,6 +49,45 @@ def assert_expect(data, expects, ctx):
         else:
             actual = json_get(data, expr)
             _assert_field(expr, actual, expected, data)
+
+def assert_db(conf, ctx):
+    """按 yaml 的 db_assert 做数据库断言。
+
+    yaml 写法：
+      db_assert:
+        sql: SELECT name, price FROM products WHERE id = ${product_id}
+        expect: [小米15, 4999]      # 按 SELECT 的列顺序比对
+        # expect: null              # 写 null 表示"期望这一行查不到"
+    """
+    # ① 没写 db_assert 的用例直接跳过（runner 那边是无条件调用的）
+    if not conf:
+        return
+
+    # ② 没配 db_path 的环境跳过 —— 不能因为加了新功能就把 dev/test 环境搞崩
+    if settings.db_path is None:
+        logger.warning("环境 [%s] 没配 db_path，跳过数据库断言", settings.env)
+        return
+
+    sql = ctx.render(conf["sql"])  # ③ 把 ${product_id} 换成真实 id
+    expected = ctx.render(conf.get("expect"))  # ④ 期望值也支持 ${...}；None 原样返回
+
+    row = query_one(sql)  # ⑤ 绕过接口代码，直接翻开数据库看
+
+    if expected is None:  # ⑥-A 期望"查不到"
+        assert row is None, (
+            f"期望数据库里查不到这条记录，实际查到了：{row}\nSQL: {sql}"
+        )
+        logger.info("数据库断言通过：确实查不到。SQL: %s", sql)
+        return
+
+    # ⑥-B 期望"查得到"
+    assert row is not None, (  # 先确认查得到，否则下面比对会报难懂的错
+        f"期望数据库里查得到记录，实际一条都没查到\nSQL: {sql}"
+    )
+    assert list(row) == list(expected), (
+        f"数据库记录不符\n期望: {list(expected)}\n实际: {list(row)}\nSQL: {sql}"
+    )
+    logger.info("数据库断言通过: %s", list(row))
 
 
 def _assert_whole(data, expr, expected):

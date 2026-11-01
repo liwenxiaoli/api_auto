@@ -14,6 +14,8 @@ from common.extractor import extract
 from common.logger import logger
 from common.sign import add_sign
 
+from common.asserter import assert_db, assert_expect, assert_status
+
 
 def _apply_sign(kwargs, conf, ctx):
     """按 yaml 里的 sign 配置给请求签名（第 8 周）。
@@ -96,6 +98,6 @@ def run_case(client, case, ctx):
 
     # 断言 3：逐个校验响应字段（三种写法见 common/asserter.py 顶部）
     assert_expect(data, case.get("expect"), ctx)
-
+    assert_db(case.get("db_assert"), ctx)
     logger.info("用例执行完成: %s", case["case"])
     return resp

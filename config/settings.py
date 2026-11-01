@@ -47,6 +47,8 @@ class Config:
         self.base_url = conf["base_url"].rstrip("/")   # rstrip 去掉结尾多余的 /
         self.timeout = conf["timeout"]
         self.user = conf["user"]
+         # 只有 mock 环境有，用 get 不报错
+        self.db_path = str(BASE_DIR / conf["db_path"]) if conf.get("db_path") else None
 
     @property
     def available_envs(self):

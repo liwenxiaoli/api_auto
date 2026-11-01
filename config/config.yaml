@@ -22,3 +22,11 @@ environments:
     user:                          # 练习站只有一套账号；真实项目里这里会是另一套
       email: john@mail.com
       password: changeme
+  # 本地 mock 环境：自己搭的服务，能连数据库做校验
+  mock:
+    base_url: http://127.0.0.1:5000
+    timeout: 10
+    db_path: mock/shop.db          # 数据库断言要连的文件（第 3 课下用）
+    user:                          # mock 服务不校验账号，但 settings 硬读这个字段，必须写
+      email: mock@mail.com
+      password: mock123
