@@ -1,6 +1,7 @@
 - case: 创建商品后数据库里应有该记录
   feature: 数据库校验
   story: 创建
+  marks: [mock]
   request:
     method: POST
     path: /products
@@ -22,6 +23,7 @@
 - case: 删除商品后数据库里应查不到
   feature: 数据库校验
   story: 删除
+  marks: [mock]
   request:
     method: DELETE
     path: /products/${product_id}
@@ -34,6 +36,7 @@
 - case: 删除不存在的商品应返回404
   feature: 数据库校验
   story: 删除-异常
+  marks: [mock]
   request:
     method: DELETE       # 填：DELETE
     path: /products/99999             # 一个不可能存在的 id

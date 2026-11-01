@@ -103,6 +103,7 @@
 
 - case: 查询刚创建的商品
   story: 商品管理（需登录）
+  marks: [smoke]
   request:
     method: GET
     path: /products/${product_id}

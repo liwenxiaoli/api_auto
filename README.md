@@ -32,7 +32,7 @@ pytest
 # 只跑登录模块
 pytest testcases/test_auth.py
 
-# 只跑冒烟（4 条核心正向链路，提代码时跑这个）
+# 只跑冒烟（5 条核心正向链路，提代码时跑这个）
 pytest -m smoke
 
 # 跑回归（冒烟以外的全部）
@@ -41,15 +41,24 @@ pytest -m "not smoke"
 # 切环境跑（dev / test，配置在 config/config.yaml）
 pytest --env=test
 
+# 并发跑（4 个进程，按文件分发；实测 12.7s → 6.5s）
+pytest -n 4 --dist loadfile
+
 # 一键跑 + 出 Allure 报告（推荐：会先清掉上一轮的旧结果）
 python run.py
 python run.py --env=test
 python run.py --case testcases/test_extract.py
 
-# 跑数据库校验用例：先另开一个终端启动本地 mock 服务并保持运行
-python mock/app.py                                  # 看到 Running on http://127.0.0.1:5000
-pytest testcases/test_db.py --env=mock -v           # 3 passed
+# 数据库校验用例只能跑本地 mock，所以要单独一条命令跑：
+# 先另开一个终端启动本地 mock 服务并保持运行
+python mock/app.py                    # 看到 Running on http://127.0.0.1:5000
+pytest -m mock --env=mock             # 3 条数据库校验用例
+pytest -m "not mock"                  # 其余 31 条（公网，不需要 mock）
 ```
+
+> ⚠️ 两套环境**不能合成一条命令**：`--env` 一次只能选一个 base_url，
+> 而 db 三条的表结构是 mock 私有的（`name/price/stock`），打到公网必然 500。
+> 所以用 marker 把用例拆开、分两次跑。
 
 > ⚠️ mock 服务**只开一个**：多个进程同时读写同一个 `shop.db` 会撞 SQLite 写锁，
 > 报 `database is locked` / `unable to open database file`。
@@ -70,10 +79,17 @@ pytest testcases/test_db.py --env=mock -v           # 3 passed
 ```
 
 ```bash
-pytest -m smoke          # 只跑标了 smoke 的（当前 4 条）
-pytest -m "not smoke"    # 跑其余的（30 条）
+pytest -m smoke          # 只跑标了 smoke 的（当前 5 条）
+pytest -m "not smoke"    # 跑其余的（29 条）
 pytest                   # 全量 34 条
+
+# 同一套机制还用来隔离"环境专用用例"：
+pytest -m mock --env=mock   # db 三条（只能跑本地 mock）
+pytest -m "not mock"        # 其余 31 条（公网）
 ```
+
+> `mock` 这个标记名和 `--env=mock` 撞名纯属巧合，两者无关：
+> `-m` 是**筛选用例**，`--env` 是**选 base_url**。
 
 **数据驱动下有个坑**：一个测试函数要吃一整份 yaml，标记写在函数头上会让
 **整份 yaml 全部变成 smoke**，等于没分级。所以标记写在 yaml 的每一条数据里，
@@ -87,8 +103,43 @@ pytest                   # 全量 34 条
 markers =
     smoke: 冒烟用例，每次提代码都要跑
     regression: 回归用例，全量跑
-    serial: 有顺序依赖，不能并发
+    mock: 只能跑本地 mock 环境（--env=mock），公网跑必然失败
 ```
+
+> 注册的另一个作用是**防"假绿"**：没有 `--strict-markers` 时，
+> yaml 里把 `smoke` 拼成 `somke`，pytest 会静默新建一个标记，
+> 结果 `pytest -m smoke` 一条都选不中却**全绿通过** —— 你以为冒烟过了，其实一条没跑。
+> 开了严格模式会当场报 `'somke' not found in markers configuration option`，收集阶段就中断。
+
+## 并发执行（pytest-xdist）
+
+多进程并行，把"干等 HTTP 响应"的时间重叠掉：
+
+```bash
+pytest -n 4 --dist loadfile     # 4 个 worker；实测 12.73s → 6.54s（约 2 倍）
+pytest -n 0                     # 退回串行（调试单条 / 打断点时用）
+```
+
+**`--dist loadfile` 是必需的，不是可选项。** 这套用例靠变量池串联
+（登录存 token → 用 token 访问 → 建商品存 id → 查这个 id），
+而 xdist 是**多进程**，每个 worker 一份内存，变量池不共享。
+`loadfile` 把**整个 .py 文件当一个整体**分给一个 worker，文件内部仍按顺序串行，
+于是所有串联关系自动保住。
+
+实测对照（同一套用例，`-n 4` 不加 `loadfile`）：
+
+| 命令 | 结果 |
+|---|---|
+| `pytest -q`（串行） | 31 passed |
+| `pytest -n 4 --dist loadfile -q` | 31 passed（和串行**失败条数完全一致**） |
+| `pytest -n 4 -q`（默认 load） | **27 passed, 7 failed** |
+
+多出来的 4 条全是 `KeyError: 占位符 ${xxx} 没有值。变量池里现在只有：['token']` ——
+`token` 是 session fixture 塞的所以每进程都有，`product_id` / `any_id` / `my_token`
+是上一条用例存的，那条在别的进程里，这边自然取不到。
+
+> 只快约 2 倍而不是 4 倍，是因为 session fixture **每个 worker 各跑一遍**
+> （4 次登录，每次约 2.7s），这部分省不掉。
 
 ## 多环境配置
 
@@ -178,7 +229,7 @@ README 顶部的徽章就是它的运行状态。
 ```
 api_auto/
 ├─ config/
-│  ├─ config.yaml      # environments：dev / test 两套环境（地址、超时、账号）
+│  ├─ config.yaml      # environments：dev / test / mock 三套环境（地址、超时、账号、db_path）
 │  └─ settings.py      # Config 对象：读 yaml + 按 --env 切换环境
 ├─ common/
 │  ├─ client.py        # HttpClient：requests.Session 封装（拼地址、超时、日志、渲染占位符）
