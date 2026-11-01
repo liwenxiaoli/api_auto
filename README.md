@@ -116,9 +116,25 @@ markers =
 多进程并行，把"干等 HTTP 响应"的时间重叠掉：
 
 ```bash
-pytest -n 4 --dist loadfile     # 4 个 worker；实测 12.73s → 6.54s（约 2 倍）
-pytest -n 0                     # 退回串行（调试单条 / 打断点时用）
+pytest -n 4 --dist loadfile         # 日常全量（固定 4 个进程）
+pytest -n auto --dist loadfile      # 按 CPU 核数自动开工
+pytest -n 4 --dist loadfile -m smoke   # 并发也能和 -m 叠加
+pytest -n 0                         # 退回串行（调试单条 / 打断点 / 看 print 时用）
 ```
+
+日常命令就这么记：**`-n 数字 --dist loadfile` 当成一个整体**，`-n 0` 是开关。
+
+> 为什么**不写进 `pytest.ini` 的 `addopts`**：写死后每次跑单条、打断点都要先起 4 个进程，
+> 子进程里断点不可靠、日志也乱。调试时用 `-n 0` 手动退回即可。
+> 等接 CI 时再在 workflow 里写死（CI 不需要调试，只求快）。
+
+**并发下的两条硬约束**（以后加用例要遵守）：
+
+1. 靠变量池传值的一组用例（登录存 token → 用 token 访问 → 建商品存 id → 查这个 id）
+   必须写在**同一个 .py 文件**里。`loadfile` 只保证"同文件同 worker"，
+   **跨文件**传变量照样断（两个文件会被分到不同 worker）。
+2. 新增用例文件**不用改任何配置**，`loadfile` 自动按文件分。
+   但某个文件特别大时会成为瓶颈（它内部仍串行），那时再考虑 `loadscope` / `loadgroup`。
 
 **`--dist loadfile` 是必需的，不是可选项。** 这套用例靠变量池串联
 （登录存 token → 用 token 访问 → 建商品存 id → 查这个 id），
