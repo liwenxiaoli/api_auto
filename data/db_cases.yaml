@@ -30,3 +30,14 @@
     sql: SELECT id, name FROM products WHERE id = ${product_id}
     expect: null
 
+
+- case: 删除不存在的商品应返回404
+  feature: 数据库校验
+  story: 删除-异常
+  request:
+    method: DELETE       # 填：DELETE
+    path: /products/99999             # 一个不可能存在的 id
+  expect_status: 404             # 填：404（你的 mock 里 rowcount==0 时返回的就是它）
+  db_assert:
+    sql: SELECT id FROM products WHERE id = 99999
+    expect: null
