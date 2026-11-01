@@ -7,6 +7,7 @@
 
 - case: 分页查询第一页1条
   story: 列表查询
+  marks: [smoke]
   request:
     method: GET
     path: /products
@@ -32,6 +33,7 @@
 
 - case: 按标题关键字查询
   story: 列表查询
+  marks: [smoke]
   request:
     method: GET
     path: /products

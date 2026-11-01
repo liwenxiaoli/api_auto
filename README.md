@@ -5,7 +5,7 @@
 用 `requests + pytest + yaml` 搭的接口自动化框架，练手站点是
 [escuelajs](https://api.escuelajs.co)（一个公开的 REST 示例 API，支持登录、商品增删改查）。
 
-**32 条用例，接口用例全部数据驱动**：用例只描述"调什么、期望什么"，执行逻辑写在框架里。
+**34 条用例，接口用例全部数据驱动**：用例只描述"调什么、期望什么"，执行逻辑写在框架里。
 
 其中 3 条是**数据库校验用例**（`test_db.py`）：除了断言接口响应，还会绕过接口直连数据库，
 确认数据真的落库了 —— 跑这部分需要先启动本地 mock 服务（见文末"数据库校验"章节）。
@@ -18,6 +18,7 @@
 | `test_db.py` | `data/db_cases.yaml` | 3（**数据库校验**：创建查得到、删除查不到、删不存在的返 404） |
 | `test_sign.py` | — | 7（签名工具单测，不联网） |
 | `test_my_first.py` | — | 4（第 1 课手写用例，保留作对比） |
+| `test_practice.py` | `data/practice.yaml` | 2（闭卷重建练习，保留作对比） |
 
 ## 怎么跑
 
@@ -30,6 +31,12 @@ pytest
 
 # 只跑登录模块
 pytest testcases/test_auth.py
+
+# 只跑冒烟（4 条核心正向链路，提代码时跑这个）
+pytest -m smoke
+
+# 跑回归（冒烟以外的全部）
+pytest -m "not smoke"
 
 # 切环境跑（dev / test，配置在 config/config.yaml）
 pytest --env=test
@@ -49,6 +56,39 @@ pytest testcases/test_db.py --env=mock -v           # 3 passed
 
 > 说明：本机的 `D:\python\python.exe` 已经装好了全部依赖，
 > PyCharm 里把解释器选成它就能直接跑，不用新建虚拟环境。
+
+## 用例分级（marker）
+
+真实团队里不会每次都跑全量：开发提 PR 只跑**冒烟**（几分钟出结果），
+每天定时跑**全量回归**。做法是用标记把用例分层：
+
+```yaml
+# data/auth_cases.yaml
+- case: 正确账号登录成功
+  marks: [smoke]        # 加一行就是冒烟用例
+  request: ...
+```
+
+```bash
+pytest -m smoke          # 只跑标了 smoke 的（当前 4 条）
+pytest -m "not smoke"    # 跑其余的（30 条）
+pytest                   # 全量 34 条
+```
+
+**数据驱动下有个坑**：一个测试函数要吃一整份 yaml，标记写在函数头上会让
+**整份 yaml 全部变成 smoke**，等于没分级。所以标记写在 yaml 的每一条数据里，
+由 `common/yaml_util.py::load_cases` 转成 `pytest.param(case, marks=..., id=...)`
+挂到单条数据上。
+
+标记必须在 `pytest.ini` 里注册（`addopts` 里有 `--strict-markers`，
+不注册就报 `'smoke' not found in markers configuration option`）：
+
+```ini
+markers =
+    smoke: 冒烟用例，每次提代码都要跑
+    regression: 回归用例，全量跑
+    serial: 有顺序依赖，不能并发
+```
 
 ## 多环境配置
 

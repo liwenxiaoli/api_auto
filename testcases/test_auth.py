@@ -12,14 +12,14 @@ import allure
 import pytest
 
 from common.runner import run_case
-from common.yaml_util import load_yaml
+from common.yaml_util import load_cases
 
-CASES = load_yaml("auth_cases.yaml")
+CASES = load_cases("auth_cases.yaml")
 
 
 @allure.feature("登录鉴权")
 class TestAuth:
 
-    @pytest.mark.parametrize("case", CASES, ids=[c["case"] for c in CASES])
+    @pytest.mark.parametrize("case", CASES)
     def test_auth(self, client, ctx, case):
         run_case(client, case, ctx)

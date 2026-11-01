@@ -10,15 +10,15 @@ import allure
 import pytest
 
 from common.runner import run_case
-from common.yaml_util import load_yaml
+from common.yaml_util import load_cases
 
-CASES = load_yaml("extract_cases.yaml")
+CASES = load_cases("extract_cases.yaml")
 
 
 @allure.feature("extract 机制")
 class TestExtract:
 
     @allure.story("登录取 token → 带 token 查资料 → 建商品取 id → 查询 → 删除清理")
-    @pytest.mark.parametrize("case", CASES, ids=[c["case"] for c in CASES])
+    @pytest.mark.parametrize("case", CASES)
     def test_extract_demo(self, client, ctx, case):
         run_case(client, case, ctx)
