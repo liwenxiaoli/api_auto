@@ -1,7 +1,11 @@
 """通用用例执行器：把一份 yaml 用例数据变成一次真实的接口调用。
 
-它把流程固化成 5 步，以后加场景只改 yaml，代码一行不动：
-    渲染占位符 -> 发请求 -> 断言状态码 -> 提取变量 -> 断言响应字段
+它把流程固化成 6 步，以后加场景只改 yaml，代码一行不动：
+    ① 渲染占位符  ② 发请求  ③ 断言状态码
+    ④ extract 提取  ⑤ 断言响应字段  ⑥ 断言数据库（可选）
+
+其中第 ⑥ 步是可选的：只有当环境带 db_path（目前只有 mock）时才写 db_assert，
+公网环境连不到别人的数据库，写了也会失败。
 
 这就是"框架"和"一堆脚本"的分界线：
     脚本里，每加一个接口就要再写一遍 requests 调用 + 断言；
@@ -9,12 +13,10 @@
 """
 import allure
 
-from common.asserter import assert_expect, assert_status
+from common.asserter import assert_db, assert_expect, assert_status
 from common.extractor import extract
 from common.logger import logger
 from common.sign import add_sign
-
-from common.asserter import assert_db, assert_expect, assert_status
 
 
 def _apply_sign(kwargs, conf, ctx):
@@ -83,12 +85,12 @@ def run_case(client, case, ctx):
     # path 里的 ${product_id} 由 client 自动渲染（见 client.request）
     resp = client.request(req["method"], req["path"], **kwargs)
 
-    # 断言 1：状态码（支持 [400, 404] 这种"多个都算对"的写法）
+    # ③ 断言状态码（支持 [400, 404] 这种"多个都算对"的写法）
     assert_status(resp, case["expect_status"])
 
     data = resp.json() if resp.text else None
 
-    # 断言 2：先提取变量（给后面的用例用）
+    # ④ extract 提取变量（存进变量池，给后面的用例用）
     extract(data, case.get("extract"), ctx)
 
     # 登记清理任务：写在 expect 断言之前是有意的 ——
@@ -96,8 +98,9 @@ def run_case(client, case, ctx):
     if case.get("cleanup"):
         ctx.add_cleanup(ctx.render(case["cleanup"]))
 
-    # 断言 3：逐个校验响应字段（三种写法见 common/asserter.py 顶部）
+    # ⑤ 逐个校验响应字段（三种写法见 common/asserter.py 顶部）
     assert_expect(data, case.get("expect"), ctx)
+    # ⑥ 断言数据库（可选：只有环境带 db_path 时才在 yaml 里写 db_assert）
     assert_db(case.get("db_assert"), ctx)
     logger.info("用例执行完成: %s", case["case"])
     return resp
