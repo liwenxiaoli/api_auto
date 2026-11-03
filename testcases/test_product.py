@@ -18,5 +18,10 @@ CASES = load_cases("product_cases.yaml")
 class TestProduct:
 
     @pytest.mark.parametrize("case", CASES)
-    def test_product(self, client, ctx, case):
+    def test_product(self, client, ctx, case, existing_product):
+        """existing_product 是前置数据 fixture：按参数名自动注入，session 级只造一次。
+
+        有了它，本文件里任何一条用例（包括单独 -k 出来的「查询刚创建的商品」）
+        都能独立跑通，不必再靠「创建商品」那条先执行过。
+        """
         run_case(client, case, ctx)

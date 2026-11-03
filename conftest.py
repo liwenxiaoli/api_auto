@@ -122,6 +122,52 @@ def token(client):
     return access_token
 
 
+@pytest.fixture(scope="session")
+def existing_product(client, ctx, token):
+    """造一个商品并把 id 塞进变量池 —— 让下游用例不必依赖「创建商品」那条。
+
+    为什么需要它：
+        product_id 原先靠「创建商品」用例的第 ④ 步 extract 提供，于是任何
+        没选中那条上游的场景（-k 单跑 / -m 筛选 / xdist 拆到别的进程）都会
+        KeyError: 占位符 ${product_id} 没有值。
+        把"造前置数据"搬到 fixture 后，用例变成自包含：选中谁都能独立跑。
+
+    为什么不加 autouse=True：
+        加了会让所有用例（含只能跑 mock 环境的 3 条 db 用例）都先建商品，
+        而 mock 服务的表结构是 name/price/stock，跟公网的
+        title/description/categoryId/images 不一样，必然报错。
+        正确做法是在需要它的测试函数参数里写上 existing_product。
+
+    为什么这里用 f-string 而不是 ${}：
+        这是 Python 代码不是 yaml，token 和 pid 都已经在手边，直接拼最直观；
+        也不依赖 init_context 的执行先后（json 里的 ${random_str(6)} 仍然由
+        client.request 自动渲染，见 common/client.py:30）。
+    """
+    resp = client.post(
+        "/products/",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "title": "auto-fixture-${random_str(6)}",
+            "price": 99,
+            "description": "由 conftest fixture 造的前置数据，跑完自动删除",
+            "categoryId": 1,
+            "images": ["https://placeimg.com/640/480/any"],
+        },
+    )
+    assert resp.status_code == 201, f"前置数据没造出来：{resp.status_code} {resp.text}"
+
+    pid = resp.json()["id"]
+    ctx.set("product_id", pid)
+    ctx.set("product_title", resp.json()["title"])
+    ctx.add_cleanup({
+        "method": "DELETE",
+        "path": f"/products/{pid}",
+        "headers": {"Authorization": f"Bearer {token}"},
+    })
+    logger.info("前置数据已就绪：product_id = %s", pid)
+    return pid
+
+
 @pytest.fixture
 def auth_client(client, token):
     """带登录态的客户端：请求头里自动带上 Authorization。
