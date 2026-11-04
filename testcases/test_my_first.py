@@ -15,7 +15,7 @@ def test_价格都是正数(client):
 
     data = resp.json()
     for item in data:
-            assert item["price"] > 0,f"价格异常:{item["title"]}={item["price"]}"
+        assert item["price"] > 0, f'价格异常:{item["title"]}={item["price"]}'
 
 
 def test_价格区间过滤(client):

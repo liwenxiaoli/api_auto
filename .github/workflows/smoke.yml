@@ -17,7 +17,7 @@ jobs:
       - name: 装 Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.13'     # 必须跟本地 .venv 一致：test_my_first.py 有 3.12+ 的 f-string 写法，3.11 会语法错误
 
       - name: 装依赖
         run: |
