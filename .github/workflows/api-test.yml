@@ -40,6 +40,24 @@ jobs:
         # --reruns 2           只重试失败项；外部抖动（超时/限流/5xx）才治得好，断言失败重试也白搭
         # --reruns-delay 1     重试前等 1 秒，给对面服务器喘口气
 
+
+
+      - name: 启动 mock 服务
+        run: |
+          python mock/app.py > mock.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:5000/products > /dev/null; then
+              echo "mock 已就绪"
+              break
+            fi
+            sleep 0.5
+          done
+
+      - name: 跑数据库校验用例
+        run: |
+          python -m pytest -m mock --env=mock -q --alluredir=allure-results-mock
+          
+
       - name: 上传报告
         if: always()          # 关键：失败也要上传，否则不知道是哪条挂的
         uses: actions/upload-artifact@v4
@@ -48,3 +66,6 @@ jobs:
           path: |
             report.html
             allure-results
+            allure-results-mock
+
+   
