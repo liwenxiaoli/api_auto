@@ -1,10 +1,10 @@
-name: 接口自动化测试
+name: 全量回归测试（定时）
 
-# 什么时候跑：
+# 分层策略（两层，不是两套用例）：
+#   冒烟层 smoke.yml  → 每次 push / PR，只跑 smoke 5 条，约 15 秒，红了拦住不许合
+#   回归层 本文件     → 每天定时 + 手动，跑 not mock 全量 31 条，红了发通知不拦合
+# 这里不再响应 push：否则一次提交会同时触发冒烟和全量，分层就白做了
 on:
-  push:
-    branches: [main]        # 推代码到 main 就跑
-  pull_request:             # 有人提 PR 也跑
   schedule:
     - cron: '0 2 * * *'     # 每天定时跑（UTC 时间 2:00 = 北京时间 10:00）
   workflow_dispatch:        # 允许在 GitHub 网页上手动点一下就跑
@@ -20,20 +20,25 @@ jobs:
       - name: 装 Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.13'     # 跟本地 .venv 保持一致，否则容易出现「本地绿、CI 红」
 
       - name: 装依赖
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 跑测试
+      - name: 跑全量回归
         env:
           PYTHONIOENCODING: utf-8      # 不然 Windows 之外的环境也可能被编码坑到
         run: |
-          python -m pytest testcases \
+          python -m pytest testcases -m "not mock" -n 4 \
+            --reruns 2 --reruns-delay 1 \
             --alluredir=allure-results \
             --html=report.html --self-contained-html
+        # -m "not mock"        排除 3 条只能跑本地 mock 服务的用例（CI 上没有 127.0.0.1:5000）
+        # -n 4                 4 个进程并发（pytest-xdist），31 条从 12.7s 降到 6.5s
+        # --reruns 2           只重试失败项；外部抖动（超时/限流/5xx）才治得好，断言失败重试也白搭
+        # --reruns-delay 1     重试前等 1 秒，给对面服务器喘口气
 
       - name: 上传报告
         if: always()          # 关键：失败也要上传，否则不知道是哪条挂的

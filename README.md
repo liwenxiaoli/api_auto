@@ -118,7 +118,7 @@ markers =
 ```bash
 pytest -n 4                # 日常全量（固定 4 个进程，默认 --dist load）
 pytest -n auto             # 按 CPU 核数自动开工
-pytest -n 4 -m smoke       # 并发也能和 -m 叠加
+pytest -n 4 -m "not mock"  # 并发也能和 -m 叠加
 pytest -n 0                # 退回串行（调试单条 / 打断点 / 看 print 时用）
 ```
 
@@ -126,7 +126,8 @@ pytest -n 0                # 退回串行（调试单条 / 打断点 / 看 print
 
 > 为什么**不写进 `pytest.ini` 的 `addopts`**：写死后每次跑单条、打断点都要先起 4 个进程，
 > 子进程里断点不可靠、日志也乱。调试时用 `-n 0` 手动退回即可。
-> 等接 CI 时再在 workflow 里写死（CI 不需要调试，只求快）。
+> 已经写死在 CI 的回归层命令里（CI 不需要调试，只求快）；**冒烟层故意不加**——
+> 只有 5 条，4 个进程各登录一次的开销比省下的时间还多（实测串行 5.1s vs 并发 6.7s）。
 
 ### 为什么现在不需要 `--dist loadfile` 了
 
@@ -239,13 +240,29 @@ python run.py --open      # 出完自动起本地服务并打开浏览器（推�
 > 签名算错会导致接口全量 401、几十条用例一起红，根本看不出是签名的问题 ——
 > 所以签名逻辑单独写单测，接口用例失败时就只需怀疑"参数/环境"，排查范围小一大半。
 
-## CI：GitHub Actions 自动跑
+## CI：GitHub Actions（分层跑）
 
-`.github/workflows/api-test.yml` 配置了三种触发：推代码到 main、提 PR、**每天定时（北京时间 10:00）**，
-也可以在 GitHub 网页上手动点 Run workflow。
+CI 不是"把用例全跑一遍"。**高频的检查必须便宜，否则没人等它，红了也就没人看。**
+所以同一批 34 条用例按 marker 切两层，用两条命令跑：
 
-跑完会把 html 报告和 allure 原始数据打包成 artifact 上传（`if: always()` 保证失败也上传）。
-README 顶部的徽章就是它的运行状态。
+| 层 | 文件 | 触发时机 | 跑哪些 | 耗时 | 红了怎么办 |
+|---|---|---|---|---|---|
+| 冒烟 | `.github/workflows/smoke.yml` | 每次 push / 提 PR | `-m "smoke and not mock"` → 5 条 | ~15 秒 | **拦住合并** |
+| 回归 | `.github/workflows/api-test.yml` | 每天 10:00 + 网页手动点 | `-m "not mock" -n 4 --reruns 2` → 31 条 | ~1 分钟 | 发通知，不拦合 |
+
+设计要点：
+
+- **不是两套用例**：只有一批用例，yaml 里打 marker，用两个 `-m` 表达式筛出两个子集。
+  真写两套文件，三个月后两边必然不一致。
+- **冒烟必须能单独切出来跑**：所以冒烟层里不能有"依赖前面用例造的数据"的用例。
+  `pytest -m smoke` 只收集 5 条，那条造数据的用例根本没被选中，一跑就红。
+  需要公共数据就声明 `existing_product` 这类 fixture——写在参数里，pytest 保证先建好。
+- **回归必须重试，冒烟不重试**：回归连公网，超时/限流/5xx 是常态（`--reruns 2 --reruns-delay 1`
+  只治外部抖动，断言失败重试也白搭）；冒烟只跑主干，它红了就是真红了，重试只会掩盖问题。
+- **`not mock` 不能省**：CI 上没有 `127.0.0.1:5000`，那 3 条数据库校验用例必然连不上。
+  显式写出来，别依赖"目前没人给 mock 用例打 smoke 标"这种巧合。
+- 失败也上传报告：`if: always()` 保证 artifact 里能看到挂在哪一条。
+- Python 版本跟本地 `.venv` 对齐（3.13），避免"本地绿、CI 红"这种最难查的问题。
 
 ## 目录说明
 
@@ -270,7 +287,7 @@ api_auto/
 ├─ testcases/          # 用例
 ├─ mock/               # 本地 mock 服务：Flask + SQLite，给数据库校验提供可碰库的被测对象
 │  └─ app.py           # /auth/login、GET|POST /products、DELETE /products/<id>、/reset
-├─ .github/workflows/  # GitHub Actions：推代码/每天定时自动跑
+├─ .github/workflows/  # GitHub Actions：smoke.yml(每次 push) + api-test.yml(每天定时全量)
 ├─ docs/               # 学习指南、练习说明
 ├─ conftest.py         # fixture：ctx / client / token / auth_client + --env 参数
 ├─ run.py              # 一键跑：清结果 → pytest → allure generate
