@@ -1,6 +1,7 @@
 # api_auto —— 接口自动化练习项目
 
-![接口自动化测试](https://github.com/liwenxiaoli/api_auto/actions/workflows/api-test.yml/badge.svg)
+![冒烟测试](https://github.com/liwenxiaoli/api_auto/actions/workflows/smoke.yml/badge.svg)
+![全量回归](https://github.com/liwenxiaoli/api_auto/actions/workflows/api-test.yml/badge.svg)
 
 用 `requests + pytest + yaml` 搭的接口自动化框架，练手站点是
 [escuelajs](https://api.escuelajs.co)（一个公开的 REST 示例 API，支持登录、商品增删改查）。
