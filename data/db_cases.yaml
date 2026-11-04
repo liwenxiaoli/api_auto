@@ -8,15 +8,15 @@
     json: {name: 小米15, price: 4999, stock: 30}
   expect_status: 201
   extract:
-    product_id: $.id
+    db_product_id: $.id
   expect:
     $.name: 小米15
   db_assert:
-    sql: SELECT name, price, stock FROM products WHERE id = ${product_id}
+    sql: SELECT name, price, stock FROM products WHERE id = ${db_product_id}
     expect: [小米15, 4999, 30]
   cleanup:
     method: DELETE
-    path: /products/${product_id}
+    path: /products/${db_product_id}
 
 
 
@@ -26,10 +26,10 @@
   marks: [mock]
   request:
     method: DELETE
-    path: /products/${product_id}
+    path: /products/${db_product_id}
   expect_status: 200
   db_assert:
-    sql: SELECT id, name FROM products WHERE id = ${product_id}
+    sql: SELECT id, name FROM products WHERE id = ${db_product_id}
     expect: null
 
 

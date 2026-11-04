@@ -41,8 +41,8 @@ pytest -m "not smoke"
 # 切环境跑（dev / test，配置在 config/config.yaml）
 pytest --env=test
 
-# 并发跑（4 个进程，按文件分发；实测 12.7s → 6.5s）
-pytest -n 4 --dist loadfile
+# 并发跑（4 个进程；实测 12.7s → 6.5s。默认 load 分发即可，不依赖用例顺序）
+pytest -n 4
 
 # 一键跑 + 出 Allure 报告（推荐：会先清掉上一轮的旧结果）
 python run.py
@@ -116,43 +116,50 @@ markers =
 多进程并行，把"干等 HTTP 响应"的时间重叠掉：
 
 ```bash
-pytest -n 4 --dist loadfile         # 日常全量（固定 4 个进程）
-pytest -n auto --dist loadfile      # 按 CPU 核数自动开工
-pytest -n 4 --dist loadfile -m smoke   # 并发也能和 -m 叠加
-pytest -n 0                         # 退回串行（调试单条 / 打断点 / 看 print 时用）
+pytest -n 4                # 日常全量（固定 4 个进程，默认 --dist load）
+pytest -n auto             # 按 CPU 核数自动开工
+pytest -n 4 -m smoke       # 并发也能和 -m 叠加
+pytest -n 0                # 退回串行（调试单条 / 打断点 / 看 print 时用）
 ```
 
-日常命令就这么记：**`-n 数字 --dist loadfile` 当成一个整体**，`-n 0` 是开关。
+日常命令就这么记：**`-n 数字` 当成一个开关**，`-n 0` 关掉。
 
 > 为什么**不写进 `pytest.ini` 的 `addopts`**：写死后每次跑单条、打断点都要先起 4 个进程，
 > 子进程里断点不可靠、日志也乱。调试时用 `-n 0` 手动退回即可。
 > 等接 CI 时再在 workflow 里写死（CI 不需要调试，只求快）。
 
-**并发下的两条硬约束**（以后加用例要遵守）：
+### 为什么现在不需要 `--dist loadfile` 了
 
-1. 靠变量池传值的一组用例（登录存 token → 用 token 访问 → 建商品存 id → 查这个 id）
-   必须写在**同一个 .py 文件**里。`loadfile` 只保证"同文件同 worker"，
-   **跨文件**传变量照样断（两个文件会被分到不同 worker）。
-2. 新增用例文件**不用改任何配置**，`loadfile` 自动按文件分。
-   但某个文件特别大时会成为瓶颈（它内部仍串行），那时再考虑 `loadscope` / `loadgroup`。
+xdist 是**多进程**，每个 worker 一份内存，**变量池不共享**。早期这套用例靠"上一条用例
+第 ④ 步 extract 塞值 → 下一条用例第 ① 步取用"串联，一旦两个用例被拆到不同进程，
+下游就会 `KeyError: 占位符 ${xxx} 没有值`。当时靠 `--dist loadfile`（同文件→同 worker）
+强行把链条按文件绑住，是一种**绕过去**的做法。
 
-**`--dist loadfile` 是必需的，不是可选项。** 这套用例靠变量池串联
-（登录存 token → 用 token 访问 → 建商品存 id → 查这个 id），
-而 xdist 是**多进程**，每个 worker 一份内存，变量池不共享。
-`loadfile` 把**整个 .py 文件当一个整体**分给一个 worker，文件内部仍按顺序串行，
-于是所有串联关系自动保住。
+根治办法是**取消"用例之间的隐式依赖"**，两条规则：
 
-实测对照（同一套用例，`-n 4` 不加 `loadfile`）：
+1. **公共数据由 session 级 fixture 提供**，不由某条用例顺手塞。
+   `conftest.py` 的 `existing_product` 会造一个商品并写入 `product_id / product_title /
+   product_price`。session fixture 在**每个 worker 各执行一次**，所以无论用例分到哪个进程，
+   池里都有料。
+2. **私有的中间变量加文件前缀**，避免跨文件撞键。
+   变量池是**全局命名空间**，键名唯一。曾出现 `extract_cases.yaml` 和 `product_cases.yaml`
+   都往 `product_id` 写、且两边数据不同（88 元 / 99 元），并发时后写者覆盖先写者 →
+   偶发 `期望 99，实际 88`。现在改为 `extract_product_*` / `created_product_*` /
+   `db_product_*` 各写各的。
+
+改完的验收（不加 `loadfile`，连跑 5 次）：
 
 | 命令 | 结果 |
 |---|---|
 | `pytest -q`（串行） | 31 passed |
-| `pytest -n 4 --dist loadfile -q` | 31 passed（和串行**失败条数完全一致**） |
-| `pytest -n 4 -q`（默认 load） | **27 passed, 7 failed** |
+| `pytest -n 4 -q`（默认 load，连跑 5 次） | **5/5 全绿，31 passed** |
+| `pytest testcases/test_extract.py -n 4 -q`（只跑一个文件、强行拆散） | 6 passed |
 
-多出来的 4 条全是 `KeyError: 占位符 ${xxx} 没有值。变量池里现在只有：['token']` ——
-`token` 是 session fixture 塞的所以每进程都有，`product_id` / `any_id` / `my_token`
-是上一条用例存的，那条在别的进程里，这边自然取不到。
+**遗留约束（仍然成立）**：一条用例如果需要"上一条用例刚造的那条数据"，本质上还是有顺序依赖。
+本项目的做法是让这类用例改读 fixture 提供的公共数据，而不是读上一条用例的结果 ——
+代价是语义从"查刚创建的那个"变成"查一个已知存在的商品"，用例名已同步改掉。
+真需要"创建后立刻查"的闭环，正确做法是把它做成**一条用例**（或用 fixture 里造+清理），
+而不是靠两条用例的执行顺序。
 
 > 只快约 2 倍而不是 4 倍，是因为 session fixture **每个 worker 各跑一遍**
 > （4 次登录，每次约 2.7s），这部分省不掉。

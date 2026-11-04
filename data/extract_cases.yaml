@@ -43,22 +43,23 @@
       images: ["https://placeimg.com/640/480/any"]
   expect_status: 201
   extract:
-    product_id: $.id
-    product_title: $.title                # 把真实生成的标题也存下来，下一条好断言
+    extract_product_id: $.id              # 前缀 extract_：本文件私有，不和别的文件抢 product_id
+    extract_product_title: $.title
+    extract_product_price: $.price        # 价格也存下来：期望值别写死成 88，否则换条用例造的数据就对不上
   cleanup:                                # 兜底清理：不管后面成功失败，结束都会删掉
     method: DELETE
-    path: /products/${product_id}
+    path: /products/${extract_product_id}
     headers:
       Authorization: "Bearer ${token}"
 
-- case: 用变量池里的 id 和标题查询刚创建的商品
+- case: 按 id 查询商品并校验标题与价格（id 和期望值都来自变量池）
   request:
     method: GET
-    path: /products/${product_id}
+    path: /products/${product_id}         # product_id 由 conftest 的 existing_product 提供，任何进程都有
   expect_status: 200
   expect:
-    $.title: ${product_title}             # 期望值也能用占位符
-    $.price: 88
+    $.title: ${product_title}             # 期望值也能用占位符：和上面 path 同源，必然一致
+    $.price: ${product_price}
 
 - case: 密码错误登录失败
   request:

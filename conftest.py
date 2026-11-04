@@ -156,9 +156,12 @@ def existing_product(client, ctx, token):
     )
     assert resp.status_code == 201, f"前置数据没造出来：{resp.status_code} {resp.text}"
 
-    pid = resp.json()["id"]
+    data = resp.json()
+    pid = data["id"]
     ctx.set("product_id", pid)
-    ctx.set("product_title", resp.json()["title"])
+    ctx.set("product_title", data["title"])
+    ctx.set("product_price", data["price"])      # ← 补这行
+
     ctx.add_cleanup({
         "method": "DELETE",
         "path": f"/products/{pid}",

@@ -20,5 +20,5 @@ class TestExtract:
 
     @allure.story("登录取 token → 带 token 查资料 → 建商品取 id → 查询 → 删除清理")
     @pytest.mark.parametrize("case", CASES)
-    def test_extract_demo(self, client, ctx, case):
+    def test_extract_demo(self, client, ctx, case, existing_product):
         run_case(client, case, ctx)

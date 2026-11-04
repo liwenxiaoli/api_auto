@@ -17,7 +17,7 @@
     method: GET
     path: /auth/profile
     headers:
-        Authorization: "Bearer ${my_token}"
+        Authorization: "Bearer ${token}"
   expect_status: 200
   expect:
     $.email: john@mail.com

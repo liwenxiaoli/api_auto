@@ -60,10 +60,10 @@
   story: 商品详情
   request:
     method: GET
-    path: /products/${any_id}
+    path: /products/${product_id}
   expect_status: 200
   expect:
-    $.id: ${any_id}
+    $.id: ${product_id}
     $.category.name: {not_empty: true}     # 嵌套字段：category 里的 name
 
 - case: 查询不存在的商品
@@ -91,23 +91,23 @@
       images: ["https://placeimg.com/640/480/any"]
   expect_status: 201
   extract:
-    product_id: $.id
-    product_title: $.title
+    created_product_id: $.id              # 前缀 created_：本文件私有，不覆盖 fixture 塞的 product_id
+    created_product_title: $.title
   expect:
     $.id: {not_empty: true}
     $.price: 99
   cleanup:                                 # 兜底清理：中间断言失败也会删干净
     method: DELETE
-    path: /products/${product_id}
+    path: /products/${created_product_id}
     headers:
       Authorization: "Bearer ${token}"
 
-- case: 查询刚创建的商品
+- case: 按 id 查询商品（id 和期望值都来自变量池）
   story: 商品管理（需登录）
   request:
     method: GET
-    path: /products/${product_id}
+    path: /products/${product_id}          # product_id 由 conftest 的 existing_product 提供
   expect_status: 200
   expect:
-    $.title: ${product_title}
-    $.price: 99
+    $.title: ${product_title}              # 期望值和 path 同源，不会出现"查到 A 却拿 B 的标准比对"
+    $.price: ${product_price}              # 原来是写死的 99，换条用例造的数据就会对不上
