@@ -1,0 +1,9 @@
+{
+    "type": "object",
+    "required": ["id", "title", "price"],
+    "properties": {
+        "id": {"type": "integer"},
+        "title": {"type": "string"},
+        "price": {"type": "number"}
+    }
+}

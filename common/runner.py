@@ -13,7 +13,7 @@
 """
 import allure
 
-from common.asserter import assert_db, assert_expect, assert_status
+from common.asserter import assert_db, assert_expect, assert_status,assert_schema
 from common.extractor import extract
 from common.logger import logger
 from common.sign import add_sign
@@ -97,6 +97,8 @@ def run_case(client, case, ctx):
     # 万一后面的断言失败（抛异常），这条数据也已经被记下来，测试结束时照样会被删掉
     if case.get("cleanup"):
         ctx.add_cleanup(ctx.render(case["cleanup"]))
+
+    assert_schema(data, case.get("schema"))
 
     # ⑤ 逐个校验响应字段（三种写法见 common/asserter.py 顶部）
     assert_expect(data, case.get("expect"), ctx)

@@ -23,11 +23,16 @@ yaml 里能写的三种写法：
 """
 import builtins
 import re
-
+import json
+from jsonschema import validate
 from common.json_util import json_get
 from common.logger import logger
 from common.db import query_one
-from config.settings import settings
+from config.settings import settings,BASE_DIR
+from jsonschema.exceptions import ValidationError
+
+
+
 
 
 def assert_status(resp, expected):
@@ -97,6 +102,26 @@ def assert_db(conf, ctx):
         f"数据库记录不符\n期望: {list(expected)}\n实际: {list(row)}\nSQL: {sql}"
     )
     logger.info("数据库断言通过: %s", list(row))
+
+def assert_schema(data, schema_name):
+    """按 yaml 的 schema 字段做结构校验。"""
+    # ① 没写 schema 的用例直接跳过（跟 assert_db 第一道门同一个套路）
+    if not schema_name:
+        return
+
+    # ② 名字 → 文件路径：yaml 里写 product，就去找 schemas/product.json
+    path = BASE_DIR / "schemas" / f"{schema_name}.json"
+    assert path.exists(), f"schema 文件不存在: {path}"
+
+    schema = json.loads(path.read_text(encoding="utf-8"))
+
+    # ③ 校验，并把报错写成"能定位"的样子
+    try:
+        validate(data, schema)
+    except ValidationError as e:
+        raise AssertionError(f"响应结构不符合 {schema_name} 契约：字段 {e.json_path} {e.message}") from e
+
+    logger.info("schema 断言通过: %s", schema_name)
 
 
 def _assert_whole(data, expr, expected):

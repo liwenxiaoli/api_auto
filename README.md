@@ -11,6 +11,9 @@
 其中 3 条是**数据库校验用例**（`test_db.py`）：除了断言接口响应，还会绕过接口直连数据库，
 确认数据真的落库了 —— 跑这部分需要先启动本地 mock 服务（见文末"数据库校验"章节）。
 
+另有 4 条挂了**结构契约校验**（`schemas/*.json`）：整份响应必须符合声明的 JSON Schema，
+用来抓"后端把字段改名/改类型/删字段"这类结构变更（见文末"结构契约校验"章节）。
+
 | 用例文件 | 数据文件 | 条数 |
 |---|---|---|
 | `test_auth.py` | `data/auth_cases.yaml` | 4（登录成功/失败、带 token、不带 token） |
@@ -279,11 +282,12 @@ api_auto/
 │  ├─ sign.py          # 签名工具：参数排序 + 拼密钥 + md5（有独立单元测试）
 │  ├─ extractor.py     # extract：按 jsonpath 规则把响应里的值存进变量池
 │  ├─ runner.py        # 通用用例执行器：一份 yaml 数据 → 一次完整调用
-│  ├─ asserter.py      # 统一断言：相等 / contains / not_empty / gt / lt / type / length / regex / 整体断言 / 数据库
+│  ├─ asserter.py      # 统一断言：相等 / contains / not_empty / gt / lt / type / length / regex / 整体断言 / 数据库 / schema
 │  ├─ db.py            # 数据库直连：query_one / execute（绕过接口查库，通道 B）
 │  ├─ yaml_util.py     # 读 data/ 下的用例数据
 │  ├─ json_util.py     # jsonpath 取值工具
 │  └─ logger.py        # 日志（logs/api.log）
+├─ schemas/            # 结构契约：product.json（单条）/ product_list.json（列表）
 ├─ data/               # 用例数据（yaml）
 ├─ testcases/          # 用例
 ├─ mock/               # 本地 mock 服务：Flask + SQLite，给数据库校验提供可碰库的被测对象
@@ -324,6 +328,7 @@ api_auto/
     json: {title: "auto-${random_str(8)}"}
     headers: {Authorization: "Bearer ${token}"}
   expect_status: 200                # 也可写 [400, 404] 多个都算对
+  schema: product                   # 可选：整份响应必须符合 schemas/product.json 的结构契约
   extract: {product_id: $.id}       # 取响应里的值存进变量池
   expect:
     $.email: john@mail.com          # ① 相等
@@ -357,8 +362,9 @@ path: /products/${product_id}                 # 路径里引用
 headers: {Authorization: "Bearer ${token}"}   # 请求头里引用
 ```
 
-执行一条用例的固定 6 步（见 `common/runner.py`）：
-`渲染占位符 → 发请求 → 断言状态码 → extract 提取 → 断言 expect 字段 → 断言数据库`。
+执行一条用例的固定 7 步（见 `common/runner.py`）：
+`渲染占位符 → 发请求 → 断言状态码 → extract 提取 → 断言 schema → 断言 expect 字段 → 断言数据库`。
+schema 放在 expect 之前是有意的：结构错了，逐字段断言报出来的错会指向错误的排查方向。
 所以 `testcases/test_extract.py` 里几乎没有代码 —— **加场景只改 yaml**。
 
 ### 热加载函数
@@ -385,6 +391,74 @@ order_no: "${timestamp()}"         # 时间戳
 ```
 
 登记发生在 expect 断言**之前**，所以中间断言失败也会清干净（见 `conftest.py::cleanup_test_data`）。
+
+## 结构契约校验：接口断言管不到的"形状"
+
+`expect` 是**抽查几个字段**，`schema` 是**检查整份响应的形状**。三种拦法的覆盖面对比：
+
+| 写法 | 管什么 | 后端把 `price` 从 `99` 改成 `"99"` | 后端删掉 `id` 字段 |
+|---|---|---|---|
+| `$.price: 99` | 这一个值 | 红 | **绿（没测到）** |
+| `$.price: {type: int}` | 这一个字段的类型 | 红 | **绿（没测到）** |
+| `schema: product` | 整份结构 | 红 | 红 |
+
+所以 schema 的价值不是"比 expect 更强"，而是**省事**：一份 7 行的 json 保护 20 个字段，不用一个个写 expect。
+
+### 怎么写
+
+`schemas/product.json`（单条商品）：
+
+```json
+{
+    "type": "object",
+    "required": ["id", "title", "price"],
+    "properties": {
+        "id": {"type": "integer"},
+        "title": {"type": "string"},
+        "price": {"type": "number"}
+    }
+}
+```
+
+`schemas/product_list.json`（列表，把单条规则套进 `items`）：
+
+```json
+{
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": ["id", "title", "price"],
+        "properties": {"id": {"type": "integer"}, "title": {"type": "string"}, "price": {"type": "number"}}
+    }
+}
+```
+
+核心规则：**schema 的结构必须跟数据的结构长成一样**。数据是数组，顶层就是 `type: array`；
+"每个元素都要有 id"这句话必须写在 `items` 里面，因为 `items` 才是"对每个元素应用一次"的开关。
+
+### 三个静默失效（全都变成假绿）
+
+这三个都是亲手撞过的：
+
+| 写法 | 结果 | 原因 |
+|---|---|---|
+| `"require"` 少个 d | 绿 | 关键字不认识，当没写 |
+| `required` 写在数组层（不套 `items`） | 绿 | 该关键字只对 object 生效，对数组跳过 |
+| 只写 `properties` 不写 `required` | 绿 | 字段缺失时无值可查，什么都不管 |
+
+**共同原因：jsonschema 遇到"管不了"的情况一律跳过，从不主动报错。**
+`check_schema()`（检查 schema 自身是否合法）也抓不到拼写错误，因为 JSON Schema 规范允许自定义关键字。
+
+所以铁律：**schema 写完，必须拿一份故意违规的数据跑一次，它必须红。红不了就是在空转。**
+
+### 另外几个坑
+
+- `case.get("schema")` 必须用 `get`：35 条里只有 4 条挂 schema，用方括号会让其余 31 条全 `KeyError`
+- schema 放在 expect **之前**：结构错了，`$.category.name` 取不到会报"不应为空"，把你引去查业务逻辑，
+  实际是结构变了 —— 前一道门是后一道门的前提（跟 `assert_db` 里"先确认查得到再比对"同一个道理）
+- 空数组 `[]` 永远通过 `items` 校验（应用 0 次）。拦"列表莫名其妙返回空"要靠 `@not_empty`，schema 管不了
+- `raise ... from e` 的 `from e` 不能省：它保留 jsonschema 的 `Failed validating` 和 `On instance` 原文
+- 用 `raise AssertionError` 而不是 `assert False`：`assert` 在 `python -O` 下会被整个删掉
 
 ## 数据库校验：接口断言 + 数据库断言双通道
 

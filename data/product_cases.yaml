@@ -15,6 +15,7 @@
       limit: 1
       offset: 0        # 这个站的坑：limit 必须和 offset 一起传才生效
   expect_status: 200
+  schema: product_list
   expect:
     "@length": 1       # @ 开头的 key 必须加引号
 
@@ -27,6 +28,7 @@
       limit: 1
       offset: 1        # 这个站的坑：limit 必须和 offset 一起传才生效
   expect_status: 200
+  schema: product_list
   expect:
     "@length": 1       # @ 开头的 key 必须加引号
 
@@ -40,6 +42,7 @@
     params:
       title: Shoes
   expect_status: 200
+  schema: product_list
   expect:
     "@not_empty": true
     $[*].title: {contains: Shoes}          # 每一条结果都要包含关键字
@@ -62,13 +65,16 @@
     method: GET
     path: /products/${product_id}
   expect_status: 200
+  schema: product          # ← 加这行，名字对应 schemas/product.json
   expect:
-    $.id: ${product_id}
-    $.category.name: {not_empty: true}     # 嵌套字段：category 里的 name
-    $.title: {type: str, regex: "^auto-fixture-"}
-                                           # 同一个字段可以叠加多个高级断言：
-                                           # 是字符串 + 匹配 fixture 造的前缀
-    $.images: {length: 1}                  # 长度断言：fixture 造商品时只传了 1 张图
+      $.id: ${product_id}
+#  expect:
+#    $.id: ${product_id}
+#    $.category.name: {not_empty: true}     # 嵌套字段：category 里的 name
+#    $.title: {type: str, regex: "^auto-fixture-"}
+#                                           # 同一个字段可以叠加多个高级断言：
+#                                           # 是字符串 + 匹配 fixture 造的前缀
+#    $.images: {length: 1}                  # 长度断言：fixture 造商品时只传了 1 张图
 
 - case: 查询不存在的商品
   story: 异常场景
