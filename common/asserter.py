@@ -8,8 +8,10 @@ yaml 里能写的三种写法：
 
     expect:
       $.email: john@mail.com        # ① 普通：取出来等于这个值
-      $.price: {gt: 0}              # ② 高级：contains / not_empty / gt / lt / type
+      $.price: {gt: 0}              # ② 高级：contains / not_empty / gt / lt / type / length / regex
       $.title: {type: str}          # ② 高级：断言类型（名字随便，值必须对）
+      $.images: {length: 1}         # ② 高级：断言长度（列表元素个数 / 字符串字符数）
+      $.title: {regex: "^auto-"}    # ② 高级：断言能匹配正则
       @length: 1                    # ③ 整体：对整份响应做断言（@ 开头）
 
     高级断言可以叠加，写在一个 {} 里：
@@ -20,6 +22,7 @@ yaml 里能写的三种写法：
     所以长度为 0 —— 用 `@` 前缀明确区分"这不是 jsonpath 表达式"。
 """
 import builtins
+import re
 
 from common.json_util import json_get
 from common.logger import logger
@@ -151,8 +154,26 @@ def _assert_advanced(expr, actual, op, want, data):
         assert isinstance(actual, want_type), (
             f"字段 {expr} 期望类型 {want}，实际类型 {type(actual).__name__}，值: {actual!r}"
         )
+    elif op == "length":
+        # 列表断言元素个数，字符串断言字符数；数字/None 没有长度，先拦掉再 len()
+        assert hasattr(actual, "__len__"), (
+            f"字段 {expr} 的值是 {type(actual).__name__}，它没有长度，"
+            f"没法做 length 断言，值: {actual!r}"
+        )
+        assert len(actual) == want, (
+            f"字段 {expr} 长度期望 {want}，实际 {len(actual)}，值: {actual!r}"
+        )
+    elif op == "regex":
+        # 跟 contains 一样：jsonpath 取出来的可能是列表，逐个检查
+        targets = actual if isinstance(actual, list) else [actual]
+        assert targets, f"字段 {expr} 取到空值，没法做正则断言，响应: {data}"
+        for item in targets:
+            assert re.search(want, str(item)), (
+                f"字段 {expr} 的值 {item!r} 不匹配正则「{want}」，响应: {data}"
+            )
     else:
         raise ValueError(
-            f"不支持的断言方式 {op}。目前支持：contains / not_empty / gt / lt / type"
+            f"不支持的断言方式 {op}。"
+            f"目前支持：contains / not_empty / gt / lt / type / length / regex"
         )
     logger.info("高级断言通过: %s %s %s", expr, op, want)

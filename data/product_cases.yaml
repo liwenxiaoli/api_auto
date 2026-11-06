@@ -65,7 +65,10 @@
   expect:
     $.id: ${product_id}
     $.category.name: {not_empty: true}     # 嵌套字段：category 里的 name
-    $.title: {type: str}                   # 类型断言：标题必须是字符串，不是数字/对象
+    $.title: {type: str, regex: "^auto-fixture-"}
+                                           # 同一个字段可以叠加多个高级断言：
+                                           # 是字符串 + 匹配 fixture 造的前缀
+    $.images: {length: 1}                  # 长度断言：fixture 造商品时只传了 1 张图
 
 - case: 查询不存在的商品
   story: 异常场景
