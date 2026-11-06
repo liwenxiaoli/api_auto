@@ -6,5 +6,7 @@ allure-pytest==2.16.2
 jsonpath==0.82.2
 pytest-html==4.2.0      # CI 里生成单文件 html 报告用
 flask==3.1.3            # 本地 mock 服务：数据库校验需要一个能碰库的自建接口
+waitress==3.0.2         # mock 的 WSGI 服务器：Flask 自带 dev server 单线程，压测前必须换掉
 pytest-xdist==3.8.0
 jsonschema==4.26.0      # 响应结构校验：schemas/*.json 里写契约，assert_schema 用它比对
+locust==2.47.0          # 压测：perf/locustfile.py

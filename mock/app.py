@@ -8,7 +8,7 @@
 """
 from pathlib import Path
 import sqlite3
-
+from waitress import serve
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
@@ -98,4 +98,4 @@ def reset():
 
 if __name__ == "__main__":
     init_db()
-    app.run(port=5000)
+    serve(app, host="127.0.0.1", port=5000, threads=32, connection_limit=1000)
