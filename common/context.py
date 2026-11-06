@@ -48,8 +48,8 @@ class Context:
 
         支持三种结构：
             str   "Bearer ${token}"  -> "Bearer eyJhbGci..."
-            dict  {"id": "${pid}"}   -> {"id": 123}
-            list  ["${a}", "${b}"]   -> ["x", "y"]
+            dict  {"id": "${pid}"}   -> {"id": 123}         字典
+            list  ["${a}", "${b}"]   -> ["x", "y"]          列表
         其它类型（数字、布尔、None）原样返回。
         """
         if isinstance(obj, str):

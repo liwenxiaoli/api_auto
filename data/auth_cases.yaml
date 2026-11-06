@@ -55,3 +55,15 @@
     method: GET
     path: /auth/profile
   expect_status: 401
+
+- case: 请求体本身不合法
+  story: 请求
+  request:
+    method: POST
+    path: /auth/login
+    json:
+      email: john@mail.com
+  expect_status: 401
+  expect:
+    $.message: Unauthorized
+    $.statusCode: 401

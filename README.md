@@ -6,7 +6,7 @@
 用 `requests + pytest + yaml` 搭的接口自动化框架，练手站点是
 [escuelajs](https://api.escuelajs.co)（一个公开的 REST 示例 API，支持登录、商品增删改查）。
 
-**34 条用例，接口用例全部数据驱动**：用例只描述"调什么、期望什么"，执行逻辑写在框架里。
+**35 条用例，接口用例全部数据驱动**：用例只描述"调什么、期望什么"，执行逻辑写在框架里。
 
 其中 3 条是**数据库校验用例**（`test_db.py`）：除了断言接口响应，还会绕过接口直连数据库，
 确认数据真的落库了 —— 跑这部分需要先启动本地 mock 服务（见文末"数据库校验"章节）。
@@ -54,7 +54,7 @@ python run.py --case testcases/test_extract.py
 # 先另开一个终端启动本地 mock 服务并保持运行
 python mock/app.py                    # 看到 Running on http://127.0.0.1:5000
 pytest -m mock --env=mock             # 3 条数据库校验用例
-pytest -m "not mock"                  # 其余 31 条（公网，不需要 mock）
+pytest -m "not mock"                  # 其余 32 条（公网，不需要 mock）
 ```
 
 > ⚠️ 两套环境**不能合成一条命令**：`--env` 一次只能选一个 base_url，
@@ -82,11 +82,11 @@ pytest -m "not mock"                  # 其余 31 条（公网，不需要 mock�
 ```bash
 pytest -m smoke          # 只跑标了 smoke 的（当前 5 条）
 pytest -m "not smoke"    # 跑其余的（29 条）
-pytest                   # 全量 34 条
+pytest                   # 全量 35 条
 
 # 同一套机制还用来隔离"环境专用用例"：
 pytest -m mock --env=mock   # db 三条（只能跑本地 mock）
-pytest -m "not mock"        # 其余 31 条（公网）
+pytest -m "not mock"        # 其余 32 条（公网）
 ```
 
 > `mock` 这个标记名和 `--env=mock` 撞名纯属巧合，两者无关：
@@ -244,12 +244,12 @@ python run.py --open      # 出完自动起本地服务并打开浏览器（推�
 ## CI：GitHub Actions（分层跑）
 
 CI 不是"把用例全跑一遍"。**高频的检查必须便宜，否则没人等它，红了也就没人看。**
-所以同一批 34 条用例按 marker 切两层，用两条命令跑：
+所以同一批 35 条用例按 marker 切两层，用两条命令跑：
 
 | 层 | 文件 | 触发时机 | 跑哪些 | 耗时 | 红了怎么办 |
 |---|---|---|---|---|---|
 | 冒烟 | `.github/workflows/smoke.yml` | 每次 push / 提 PR | `-m "smoke and not mock"` → 5 条 | ~15 秒 | **拦住合并** |
-| 回归 | `.github/workflows/api-test.yml` | 每天 10:00 + 网页手动点 | `-m "not mock" -n 4 --reruns 2` → 31 条 | ~1 分钟 | 发通知，不拦合 |
+| 回归 | `.github/workflows/api-test.yml` | 每天 10:00 + 网页手动点 | `-m "not mock" -n 4 --reruns 2` → 32 条 | ~1 分钟 | 发通知，不拦合 |
 
 设计要点：
 
