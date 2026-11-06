@@ -279,7 +279,7 @@ api_auto/
 │  ├─ sign.py          # 签名工具：参数排序 + 拼密钥 + md5（有独立单元测试）
 │  ├─ extractor.py     # extract：按 jsonpath 规则把响应里的值存进变量池
 │  ├─ runner.py        # 通用用例执行器：一份 yaml 数据 → 一次完整调用
-│  ├─ asserter.py      # 统一断言：相等 / contains / not_empty / gt / lt / 整体断言 / 数据库
+│  ├─ asserter.py      # 统一断言：相等 / contains / not_empty / gt / lt / type / 整体断言 / 数据库
 │  ├─ db.py            # 数据库直连：query_one / execute（绕过接口查库，通道 B）
 │  ├─ yaml_util.py     # 读 data/ 下的用例数据
 │  ├─ json_util.py     # jsonpath 取值工具
@@ -327,7 +327,8 @@ api_auto/
   extract: {product_id: $.id}       # 取响应里的值存进变量池
   expect:
     $.email: john@mail.com          # ① 相等
-    $.price: {gt: 0}                # ② 高级：contains / not_empty / gt / lt
+    $.price: {gt: 0}                # ② 高级：contains / not_empty / gt / lt / type
+    $.title: {type: str}            # ② 高级：断言类型（值必须是 str 类型）
     "@length": 1                    # ③ 对整份响应断言（@ 必须加引号）
   cleanup:                          # 兜底清理，测试结束统一执行
     method: DELETE

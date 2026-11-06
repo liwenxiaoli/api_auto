@@ -8,13 +8,19 @@ yaml 里能写的三种写法：
 
     expect:
       $.email: john@mail.com        # ① 普通：取出来等于这个值
-      $.price: {gt: 0}              # ② 高级：contains / not_empty / gt / lt
+      $.price: {gt: 0}              # ② 高级：contains / not_empty / gt / lt / type
+      $.title: {type: str}          # ② 高级：断言类型（名字随便，值必须对）
       @length: 1                    # ③ 整体：对整份响应做断言（@ 开头）
+
+    高级断言可以叠加，写在一个 {} 里：
+        $.title: {not_empty: true, type: str}    # 既要不为空，又要是字符串
 
 ⚠️ 为什么整体断言要用 `@length` 而不是 jsonpath 的 `$`？
     这个 jsonpath 库对单独一个 `$` 返回 False（实测），根本取不到东西，
     所以长度为 0 —— 用 `@` 前缀明确区分"这不是 jsonpath 表达式"。
 """
+import builtins
+
 from common.json_util import json_get
 from common.logger import logger
 from common.db import query_one
@@ -132,8 +138,21 @@ def _assert_advanced(expr, actual, op, want, data):
         assert actual > want, f"字段 {expr} 应大于 {want}，实际 {actual}，响应: {data}"
     elif op == "lt":
         assert actual < want, f"字段 {expr} 应小于 {want}，实际 {actual}，响应: {data}"
+    elif op == "type":
+        # want 是 yaml 里写的字符串（"str" / "int" / "list"...），不是类型本身。
+        # 跟 yaml_util 的 getattr(pytest.mark, m) 同一个套路：名字是数据给的，只能按名去找。
+        want_type = getattr(builtins, want, None)
+        assert isinstance(want_type, type), (
+            f"字段 {expr} 的 type 断言写了不支持的类型名「{want}」，"
+            f"可用：str / int / float / list / dict / bool / NoneType"
+        )
+        # ⚠️ 已知局限：bool 是 int 的子类，isinstance(True, int) 也是 True，
+        #    所以 {type: int} 碰到布尔值会误判通过。要严谨得先把 bool 单独拦掉。
+        assert isinstance(actual, want_type), (
+            f"字段 {expr} 期望类型 {want}，实际类型 {type(actual).__name__}，值: {actual!r}"
+        )
     else:
         raise ValueError(
-            f"不支持的断言方式 {op}。目前支持：contains / not_empty / gt / lt"
+            f"不支持的断言方式 {op}。目前支持：contains / not_empty / gt / lt / type"
         )
     logger.info("高级断言通过: %s %s %s", expr, op, want)

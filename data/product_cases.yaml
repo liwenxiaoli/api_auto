@@ -65,6 +65,7 @@
   expect:
     $.id: ${product_id}
     $.category.name: {not_empty: true}     # 嵌套字段：category 里的 name
+    $.title: {type: str}                   # 类型断言：标题必须是字符串，不是数字/对象
 
 - case: 查询不存在的商品
   story: 异常场景
