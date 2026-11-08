@@ -1,0 +1,21 @@
+.gitignore
+.idea/
+.vscode/
+.*venv/
+venv/
+__pycache__/
+.pytest_cache/
+reports/
+logs/
+# CI/本地生成的单文件 html 报告
+report.html
+allure-results/
+# 本地 mock 服务运行时生成的数据库文件（每次跑都会变，不该进仓库）
+mock/*.db
+mock/*.db-journal
+# WAL 模式的伴生文件（切到 WAL 后自动生成）
+mock/*.db-wal
+mock/*.db-shm
+
+# CI 里 mock 段的 allure 原始数据
+allure-results-mock/

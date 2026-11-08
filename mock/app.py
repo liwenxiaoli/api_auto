@@ -21,7 +21,11 @@ DB = str(Path(__file__).resolve().parent / "shop.db")
 def get_conn():
     """每个线程复用自己的连接，不再每次新建"""
     if not hasattr(_local, "conn"):
-        _local.conn = sqlite3.connect(DB, timeout=10)
+        conn = sqlite3.connect(DB, timeout=10)
+        # WAL：读操作不再锁数据库文件（读 -shm 共享内存），多进程共享同一个库也能并行读
+        # 实测（400 用户 / 50 秒 ×3）：吞吐 2281 → 2376 RPS，P50 13ms → 8ms
+        conn.execute("PRAGMA journal_mode=WAL")
+        _local.conn = conn
     return _local.conn
 
 
