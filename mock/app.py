@@ -12,16 +12,18 @@ from waitress import serve
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
+import threading
+_local = threading.local()
 
 # 用绝对路径：不管从哪个目录启动，库文件都固定在本文件旁边
 # （写相对路径 "shop.db" 会建在"当前工作目录"，换目录跑就找不到 —— 今天踩过的坑）
 DB = str(Path(__file__).resolve().parent / "shop.db")
-
-
 def get_conn():
-    """每次请求新建一条连接，用完就关。简单、不会互相干扰。"""
-    # timeout=10：测试脚本会同时直连同一个库文件，撞上时排队等，别直接抛锁错误
-    return sqlite3.connect(DB, timeout=10)
+    """每个线程复用自己的连接，不再每次新建"""
+    if not hasattr(_local, "conn"):
+        _local.conn = sqlite3.connect(DB, timeout=10)
+    return _local.conn
+
 
 
 def init_db():
@@ -35,7 +37,7 @@ def init_db():
         )
     """)
     conn.commit()
-    conn.close()
+
 
 
 @app.route("/auth/login", methods=["POST"])
@@ -48,7 +50,7 @@ def login():
 def list_products():
     conn = get_conn()
     rows = conn.execute("SELECT id, name, price, stock FROM products").fetchall()
-    conn.close()
+
     products = [{"id": r[0], "name": r[1], "price": r[2], "stock": r[3]} for r in rows]
     return jsonify(products), 200
 
@@ -64,7 +66,7 @@ def create_product():
     )
     conn.commit()                 # 落笔！不写就变"幽灵商品"
     new_id = cur.lastrowid
-    conn.close()
+
     return jsonify({
         "id": new_id,
         "name": data["name"],
@@ -80,7 +82,7 @@ def delete_product(pid):
     cur.execute("DELETE FROM products WHERE id = ?", (pid,))   # WHERE 不能漏
     conn.commit()
     deleted = cur.rowcount
-    conn.close()
+
     if deleted == 0:
         return jsonify({"error": "not found"}), 404
     return jsonify({"deleted": pid}), 200
@@ -92,10 +94,15 @@ def reset():
     conn = get_conn()
     conn.execute("DELETE FROM products")
     conn.commit()
-    conn.close()
+
     return jsonify({"reset": True}), 200
 
 
 if __name__ == "__main__":
+    import sys
+
+    # 端口从命令行读，不传就用 5000：python mock/app.py 5001
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
+
     init_db()
-    serve(app, host="127.0.0.1", port=5000, threads=32, connection_limit=1000)
+    serve(app, host="127.0.0.1", port=port, threads=4, connection_limit=1000)
