@@ -14,7 +14,7 @@ class ProductWriter(HttpUser):
     # 基准协议：每次请求后歇 0.1~0.2 秒（均值 0.15），与 GET 的 locustfile 对齐
     # 加压实验时改成 between(0, 0.1)：用户不停手 = 加压，但连接数不变
     # （500 用户 ≈ 500 条 keep-alive 连接，再加用户会撞 Windows select 512 上限）
-    wait_time = between(0.1, 0.2)
+    wait_time = between(0, 0.1)
 
     @task
     def create_product(self):
