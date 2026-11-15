@@ -17,8 +17,10 @@
 import http from "k6/http";
 import { check } from "k6";
 
-// 靶子写死：只压本地 mock（waitress）。和 locustfile 一样，不碰公网
-const BASE = "http://127.0.0.1:5000";
+// 靶子默认本地 mock（waitress），可用环境变量覆盖（双进程实验要打不同端口）：
+//   $env:BASE_URL="http://127.0.0.1:5001"; k6 run ... perf/write_test.js
+// 意义同 locustfile_write.py 删掉类属性 host 改 --host：死值会让多目标实验做不成
+const BASE = __ENV.BASE_URL || "http://127.0.0.1:5000";
 
 // 每个虚拟用户反复执行这个函数
 export default function () {
