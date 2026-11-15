@@ -19,3 +19,6 @@ mock/*.db-shm
 
 # CI 里 mock 段的 allure 原始数据
 allure-results-mock/
+
+# 压测工具二进制（k6 等，体积大，不该进仓库）
+tools/

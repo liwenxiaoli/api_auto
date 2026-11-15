@@ -457,6 +457,82 @@ locust 侧用环境变量 `NO_PROXY=127.0.0.1,localhost`。
 
 ---
 
+## 阶段 13：换 k6 突破客户端单核（11-15 晚）
+
+### 背景
+
+阶段 12 的结论带一个边界：每个 Locust 客户端 0.92 核、贴着 GIL 的 1 核上限，所以
+"双进程 3143 RPS"里掺了客户端成分，无法断定服务端真实上限。要突破，得换一个
+**不受 GIL 限制**的压测工具。选了 k6（Grafana 官方、Go 写、goroutine 自动摊多核、
+官方发 Windows 预编译 zip，免安装）。
+
+> 工具选择记录：wrk 无官方 Windows 版；hey 官方仓库只发源码不发布二进制（要自己装 Go 编译）；
+> k6 官方发 `windows-amd64.zip`，winget 也有 `GrafanaLabs.k6`（但 MSI 安装被本机 UAC 拦，
+> 退出码 1602，改走 gh-proxy 下载 zip 解压到 `tools/k6-v2.4.0-windows-amd64/k6.exe`）。
+
+k6 压测脚本：`perf/write_test.js`（JavaScript，比 locustfile 还短；成功判据同 locust——
+只有 `status === 201` 才算通过）。
+
+### 轮 1：FULL 配置（默认），400 VU / 50s
+
+```
+http_reqs......: 16945  330.44 req/s
+http_req_duration: avg=1.19s  med=1.19s  max=9.61s  p95=1.24s
+http_req_failed: 0.00%（0 / 16945）
+```
+
+**关键发现 1**：k6 测 FULL 得 **330 RPS**，与 Locust 的 318 几乎一致。
+
+> 意义：之前用"客户端 CPU 0.35 核未到顶"推断"318 是服务端上限"，现在换了一个
+> **不受 GIL 限制**的多核工具独立重测，数字不变。两条独立路线（CPU 采样 / 换工具）
+> 都指向同一答案 ⇒ **FULL 配置下 318~330 就是服务端真实上限，与客户端单核无关**。
+> 这是"交叉验证"，比单一路径的推断硬得多。
+
+### 轮 2：NORMAL 配置，400 VU / 50s
+
+```
+http_reqs......: 28642  570.11 req/s
+http_req_duration: avg=699ms  med=720ms  max=3.01s  p95=932ms
+http_req_failed: 0.47%（137 / 28642）
+```
+
+**关键发现 2**：出现 **137 次失败**，报错全是
+`connectex: No connection could be made ... actively refused it`（连接被拒绝）。
+
+> 这不是写锁冲突，也不是业务错误——是 **waitress 服务端扛不住 k6 的密集连接**：
+> k6 的 400 VU 每个都反复新建 TCP 连接，瞬时连接数撞上 `connection_limit=1000`
+> 或 accept 队列上限，那一瞬间新连接被拒。570 RPS 是"服务端被打崩前的峰值"，
+> **不是 NORMAL 的真实上限**。
+
+**关键发现 3（比数字重要）**：换掉慢的客户端后，瓶颈**转移**了。
+
+> Locust 时代：客户端 0.92 核先到顶 ⇒ 我们以为 1139/1476 是服务端上限。
+> k6 时代：客户端不再受限 ⇒ 服务端下一个隐藏瓶颈（waitress 单进程连接处理能力）
+> 立刻暴露，直接 `connection refused`。
+>
+> 这说明：**压测工具的能力上限，决定了你能看到哪个瓶颈。** 工具弱，看到的是工具自己的墙；
+> 工具强，才能把服务端真正的下一道墙逼出来。之前 Locust 测的 1139/1476，
+> 其实根本没触到 waitress 的极限。
+
+### 结论与修正
+
+- FULL：318（Locust）≈ 330（k6），服务端真实上限，交叉验证成立 ✅
+- NORMAL 的"服务端真实上限"**仍未测到**——之前 Locust 的 1139/1476 受客户端单核污染，
+  需要先解决 waitress 的连接处理瓶颈（加大 `connection_limit`、或起多进程）后，
+  才能用 k6 测出 NORMAL 的真实上限。
+
+### 下一步（遗留）
+
+要测 NORMAL 的真实上限，两条路任选：
+1. **放大 waitress 的连接容量**：`connection_limit` 从 1000 调大（如 10000）、
+   `backlog` 调大，让 k6 的密集连接不被拒
+2. **起多进程 waitress**：Linux 下 gunicorn `-w N`；Windows 下手动起多个 waitress + 反向代理
+   分摊连接
+
+然后 k6 再压，才能看到 NORMAL 配置下服务端（而非客户端、也非连接层）的真实上限。
+
+---
+
 ## 附：可复用命令
 
 ```powershell
@@ -502,7 +578,8 @@ Start-Sleep 3
 1. ~~收尾回归没跑~~ ✅ 11-11 已补：322.42 RPS / Med 1400ms，回到原值，闭环成立
 2. ~~新瓶颈只是推断~~ ✅ 11-15 终验完成：双服务 + 独立 DB，吞吐 1476 → **3142.73（×2.13）**，
    写锁归因由推断升级为干预实验证据（见阶段 12）
-3. **更高并发测不了**：两重限制——512 句柄上限卡死 500 用户；客户端单进程 0.92 核已贴顶。
-   要再往上，需分布式压测（`--master/--worker`）或换 wrk/hey（属另一条线）
+3. ~~更高并发测不了~~ 已引入 k6（免安装，`tools/k6-v2.4.0-windows-amd64/k6.exe`）突破客户端单核；
+   但新瓶颈转移到 waitress 连接处理（k6 密集连接打出 `connection refused`），
+   NORMAL 真实上限仍未测到（见阶段 13）
 4. **400 用户那轮 Max 8103ms 是异常值**，未定位（可能是 WAL checkpoint 阻塞），
    对比 500 用户那轮 Max 只有 4790ms，说明它是偶发
