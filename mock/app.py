@@ -26,10 +26,12 @@ def get_conn():
         # 实测（400 用户 / 50 秒 ×3）：吞吐 2281 → 2376 RPS，P50 13ms → 8ms
         conn.execute("PRAGMA journal_mode=WAL")
         # ⚠️ 这里不要默认加 PRAGMA synchronous=NORMAL
-
         # 它是"commit 不等落盘"，属于验证瓶颈用的实验开关，不是生产配置：
-        # 临时加上后写吞吐 318 → 1139 RPS、P50 1400ms → 280ms
-        # （证明 fsync 是写瓶颈的实验，详见 docs/POST压测全过程-改动记录.md 阶段 7）
+        #   阶段 7：用它证明 fsync 是写瓶颈（318 → 1139）
+        #   阶段 15：用它测出 NORMAL 态真实上限 1700 RPS（325 → 1700，×5.2）
+        # 注意 synchronous 是"连接级"PRAGMA，不写进库文件，
+        # 所以必须在 get_conn() 里给每条新连接各设一次（threads=4 就是 4 次）
+        # 详见 docs/POST压测全过程-改动记录.md 阶段 7 / 15
         _local.conn = conn
     return _local.conn
 
