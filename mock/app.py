@@ -116,4 +116,9 @@ if __name__ == "__main__":
         DB = str(Path(sys.argv[2]).resolve())
 
     init_db()
-    serve(app, host="127.0.0.1", port=port, threads=4, connection_limit=1000)
+    # connection_limit 从 1000 提到 10000：k6 的密集建连会撞穿 1000，表现为 connection refused
+    # （400 用户 FULL 配置：4.85% 失败 → 0.00%）。
+    # ⚠️ 代价：Windows 的 select() 最多监视 512 个句柄，限制放宽后连接堆得更多时，
+    # 报错会从"拒绝连接"变成 ValueError: too many file descriptors in select()，
+    # 也就是"更晚、更响地崩"。本机单进程能验证的上限就在 400~500 并发这一档。
+    serve(app, host="127.0.0.1", port=port, threads=4, connection_limit=10000)
