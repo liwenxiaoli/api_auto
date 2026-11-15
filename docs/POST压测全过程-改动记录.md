@@ -346,10 +346,101 @@ CPU 采样：服务端 1.24 核（没变），两个客户端各 **0.48 核**。
 - ~~1150 是写上限~~ → **约 1.4k~1.5k**（上周五 1150 那轮条件不干净）
 - ~~上限来自单进程 CPU/GIL~~ → **来自 SQLite 单写者锁**（待终验，见下）
 
-### 终验（未做）
+### 终验（已做，见阶段 12）
 
-把 DB 路径做成可配置，起两个服务进程**各用独立的 DB 文件**（去掉共享写锁）：
-若合计吞吐 ≈ 2×1400，写锁瓶颈坐实。这是把"排除法结论"升级成"干预实验证据"的最后一步。
+---
+
+## 阶段 12：终验——独立 DB 双进程（11-15）
+
+### 目的
+
+阶段 11 用排除法把嫌疑收敛到"SQLite 单写者锁"，但那仍是**推断**。本次直接动手拆掉
+这个共享资源（两个服务进程各用独立 DB 文件），看吞吐是否随之翻倍——翻倍则归因成立。
+
+### 改了哪儿
+
+1. `mock/app.py`：DB 路径支持命令行第二参数（默认仍是 `shop.db`）
+   ```python
+   port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
+   if len(sys.argv) > 2:
+       DB = str(Path(sys.argv[2]).resolve())   # 必须在 init_db() 之前
+   ```
+2. `perf/locustfile_write.py`：删掉类属性 `host`，改用 `--host` 传（类属性优先级高于
+   `--host`，留着死值命令行会被忽略）
+3. 临时加回 `PRAGMA synchronous=NORMAL`（与阶段 11 基线同条件，否则测的是 fsync）
+
+### 第一次跑：100% 失败，全部 2 秒超时
+
+```
+POST /products   5750 reqs  5750(100.00%)  Min 2007  Max 2081  Med 2007   116.83 req/s
+错误：期望 201，实际 0，响应（空）
+```
+
+`status_code = 0` + 空响应 + 每条都卡 2000ms ⇒ **根本没拿到 HTTP 响应**，服务没在收请求。
+
+排查三步：
+
+| 检查 | 结果 | 说明 |
+|---|---|---|
+| `netstat -ano \| findstr :5000` | 无监听 | 服务进程压根没起来 |
+| `ls mock/*.db` | 只有旧的 `shop.db` | 连 `init_db()` 都没执行 |
+| `curl` 直连 | 502 | 本机有**系统代理**，localhost 请求被转走了 |
+
+**真凶**：`mock/app.py` 第 109 行是
+```python
+if __name__ == "__&#8203;main__":
+```
+粘贴代码时把 HTML 实体 `&#8203;`（零宽空格）当普通文本贴进去了。语法合法、不报错，
+但 `__name__ == "__&#8203;main__"` 恒为 False，**整个启动块从不执行，进程静默退出**。
+
+> 教训：`python xxx.py` 一执行就退、不报错、端口不监听，先查 `__main__` 那行有没有脏字符。
+> 用 `ASCII` 视野看一遍（`repr()` 打印该行）比肉眼可靠。
+
+顺带一个坑：`curl` 走系统代理返回 502，压本地必须 `curl.exe --noproxy '*'`；
+locust 侧用环境变量 `NO_PROXY=127.0.0.1,localhost`。
+
+### 修好后：两个服务 + 两个客户端
+
+| 进程 | PID | 角色 | 平均 CPU | 折合核 |
+|---|---|---|---|---|
+| 服务 A（5000 → `mock/a.db`） | 29408 | waitress | 1.27 | **1.27 核** |
+| 服务 B（5001 → `mock/b.db`） | 23716 | waitress | 1.28 | **1.28 核** |
+| 客户端 A | 18856 | locust | 0.92 | **0.92 核** |
+| 客户端 B | 35912 | locust | 0.92 | **0.92 核** |
+
+（22 个采样点，全程稳定；服务端 PID 与 `netstat` 里 5000/5001 的 LISTENING PID 完全一致）
+
+```
+服务 A：78024 reqs  0(0.00%)  Avg 105  Min 6  Max 945   Med 110   1578.26 req/s
+服务 B：77345 reqs  0(0.00%)  Avg 106  Min 6  Max 2943  Med 110   1564.47 req/s
+合计：3142.73 req/s
+```
+
+### 判读
+
+| | 单服务 + 单 DB（阶段 11 轮 2） | 双服务 + 独立 DB | 变化 |
+|---|---|---|---|
+| 吞吐 | 1476.50 | **3142.73** | **×2.13** |
+| Med | 290ms | **110ms** | ÷2.6 |
+
+**结论成立：瓶颈是那把共享的写锁。** 如果限制来自磁盘物理 IO，分库不会有效果
+（两个进程写的还是同一块盘）。现在把共享资源拆开、吞吐立刻线性翻倍，因果链闭合。
+
+### 边界（对外必须带上）
+
+每个客户端 **0.92 核**，几乎贴着自己 1 核的上限（locust 日志里
+`CPU usage above 90%!` 说的就是它自己这个进程，不是整机）。所以 3143 里有客户端成分，
+**不能写成"服务端上限 3143"**。正确表述：
+
+> 把 DB 拆成两个独立文件后，写吞吐由约 1.48k 提升到 **3.14k RPS（×2.13）**，
+> 证明原上限来自 SQLite 单写者锁，而非 CPU 或磁盘。
+
+要再往上，得先解决压测端（分布式 locust / wrk / hey），这属于另一条线。
+
+### 收尾
+
+`PRAGMA synchronous=NORMAL` 已删除，`mock/app.py` 回到默认 FULL 配置；
+`mock/a.db`、`mock/b.db` 由 `.gitignore` 的 `mock/*.db` 自动忽略，不入库。
 
 ---
 
@@ -370,6 +461,22 @@ Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Select-Object Proces
 
 # 认服务端（5000 端口对应的 PID）
 netstat -ano | findstr :5000
+
+# 终验：双服务 + 独立 DB（阶段 12）
+python mock/app.py 5000 mock/a.db
+python mock/app.py 5001 mock/b.db
+curl.exe --noproxy "*" -X POST http://127.0.0.1:5000/reset
+curl.exe --noproxy "*" -X POST http://127.0.0.1:5001/reset
+# 两个 locust 要几乎同时起，否则时间窗错开
+python -m locust -f perf/locustfile_write.py --host http://127.0.0.1:5000 --headless -u 250 -r 125 -t 50s --only-summary
+python -m locust -f perf/locustfile_write.py --host http://127.0.0.1:5001 --headless -u 250 -r 125 -t 50s --only-summary
+
+# 采样各进程核数（100% = 1 核）
+$p1=@{}; Get-Process python -EA SilentlyContinue | %{$p1[$_.Id]=$_.TotalProcessorTime.TotalSeconds}
+Start-Sleep 3
+1..22 | %{ $p2=@{}; Get-Process python -EA SilentlyContinue | %{$p2[$_.Id]=$_.TotalProcessorTime.TotalSeconds};
+  "{0}  {1}" -f (Get-Date -f HH:mm:ss), (($p2.Keys | ?{$p1.ContainsKey($_)} | %{"$_={0:N2}" -f (($p2[$_]-$p1[$_])/2)}) -join '  ');
+  $p1=$p2; Start-Sleep 2 }
 ```
 
 `-r` 的经验值：**用户数 ÷ 200 左右，让爬坡只占 2 秒**。爬坡期请求不走排队，会把 Avg 拉低
@@ -380,9 +487,9 @@ netstat -ano | findstr :5000
 ## 附：遗留问题
 
 1. ~~收尾回归没跑~~ ✅ 11-11 已补：322.42 RPS / Med 1400ms，回到原值，闭环成立
-2. ~~新瓶颈只是推断~~ 11-11 已做判决实验（双客户端 +4.3%、CPU 全采样）：排除压测机/CPU/磁盘，
-   **指向 SQLite 单写者锁**；但还差终验——两个服务进程各用独立 DB 文件，看合计是否 ≈2×1400
-3. **本机测不了更高并发**：512 句柄上限卡死 500 用户；要验证"多进程能否逼近 1150×N"，
-   需要分布式压测（`--master/--worker`）或换 wrk/hey
+2. ~~新瓶颈只是推断~~ ✅ 11-15 终验完成：双服务 + 独立 DB，吞吐 1476 → **3142.73（×2.13）**，
+   写锁归因由推断升级为干预实验证据（见阶段 12）
+3. **更高并发测不了**：两重限制——512 句柄上限卡死 500 用户；客户端单进程 0.92 核已贴顶。
+   要再往上，需分布式压测（`--master/--worker`）或换 wrk/hey（属另一条线）
 4. **400 用户那轮 Max 8103ms 是异常值**，未定位（可能是 WAL checkpoint 阻塞），
    对比 500 用户那轮 Max 只有 4790ms，说明它是偶发

@@ -105,12 +105,14 @@ def reset():
 
     return jsonify({"reset": True}), 200
 
-
 if __name__ == "__main__":
     import sys
 
     # 端口从命令行读，不传就用 5000：python mock/app.py 5001
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
+
+    if len(sys.argv) > 2:
+        DB = str(Path(sys.argv[2]).resolve())
 
     init_db()
     serve(app, host="127.0.0.1", port=port, threads=4, connection_limit=1000)
