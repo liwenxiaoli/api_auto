@@ -25,13 +25,16 @@ def get_conn():
         # WAL：读操作不再锁数据库文件（读 -shm 共享内存），多进程共享同一个库也能并行读
         # 实测（400 用户 / 50 秒 ×3）：吞吐 2281 → 2376 RPS，P50 13ms → 8ms
         conn.execute("PRAGMA journal_mode=WAL")
-        # ⚠️ 这里不要默认加 PRAGMA synchronous=NORMAL
-        # 它是"commit 不等落盘"，属于验证瓶颈用的实验开关，不是生产配置：
-        #   阶段 7：用它证明 fsync 是写瓶颈（318 → 1139）
-        #   阶段 15：用它测出 NORMAL 态真实上限 1700 RPS（325 → 1700，×5.2）
-        # 注意 synchronous 是"连接级"PRAGMA，不写进库文件，
-        # 所以必须在 get_conn() 里给每条新连接各设一次（threads=4 就是 4 次）
-        # 详见 docs/POST压测全过程-改动记录.md 阶段 7 / 15
+
+        # ⚠️ 下面两个都是"验证瓶颈用的实验开关"，测完必须删，不要留在默认代码里：
+        #   PRAGMA synchronous=NORMAL（连接级）
+        #     阶段 7：证明 fsync 是写瓶颈（318 → 1139）
+        #     阶段 15：测出 NORMAL 态真实上限 1700 RPS（325 → 1700，×5.2）
+        #   PRAGMA wal_autocheckpoint=10000（连接级）
+        #     阶段 16：在稳定区 1500 做 A/B，p95 5.23ms → 2.59ms、max 314ms → 168ms，
+        #     证实 WAL checkpoint 是尾部延迟的来源；但临界点 1700 附近不可归因
+        # 连接级 PRAGMA 不写进库文件，必须在 get_conn() 里给每条连接各设一次
+        # 详见 docs/POST压测全过程-改动记录.md 阶段 7 / 15 / 16
         _local.conn = conn
     return _local.conn
 
