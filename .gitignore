@@ -17,6 +17,9 @@ mock/*.db-journal
 mock/*.db-wal
 mock/*.db-shm
 
+# 地基补课实验 perf/wal_lab.py 生成的独立库（不碰压测库）
+perf/lab.db*
+
 # CI 里 mock 段的 allure 原始数据
 allure-results-mock/
 
